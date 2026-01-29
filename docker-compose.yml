@@ -1,0 +1,12 @@
+services:
+  watcher:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      # Persist watcher state between restarts
+      - watcher-state:/app
+
+volumes:
+  watcher-state:

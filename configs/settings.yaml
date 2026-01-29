@@ -1,0 +1,10 @@
+openai:
+  model: gpt-4o-mini
+  timeout_seconds: 60
+
+github:
+  api_base_url: https://api.github.com
+  max_comment_length: 60000
+
+agents:
+  max_iterations: 3

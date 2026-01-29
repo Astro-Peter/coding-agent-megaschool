@@ -1,0 +1,27 @@
+Metadata-Version: 2.4
+Name: megaschool-agents
+Version: 0.1.0
+Summary: Code and review agents for the Megaschool SDLC task.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: PyGithub>=2.3.0
+Requires-Dist: openai>=1.40.0
+
+# Megaschool Coding Agents
+
+Skeleton implementation of planner, coder, verifier, and reviewer agents for the SDLC task.
+
+## Quick start
+
+These agents run locally and react to issue comments and PR updates. Configure
+your `.env` file, then run the local watchers.
+
+```bash
+pip install -e .
+cp .env.example .env
+# Edit .env with your values.
+./scripts/run_local_watcher.sh
+./scripts/run_local_pr_watcher.sh
+```
+
+To replan from an issue comment, add `/plan` and the planner workflow will post a new plan.
