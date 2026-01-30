@@ -14,7 +14,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents import Agent, Runner
+from agents import Agent, Runner, RunConfig, RunHooks, Tool
+from agents.run_context import RunContextWrapper
 
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
@@ -24,6 +25,41 @@ from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_ci_fixer_tools
 
 logger = logging.getLogger(__name__)
+
+
+class ToolLoggingHooks(RunHooks[AgentContext]):
+    """Hooks to log tool calls for debugging and observability."""
+
+    async def on_tool_start(
+        self,
+        context: RunContextWrapper[AgentContext],
+        agent: Agent[AgentContext],
+        tool: Tool,
+    ) -> None:
+        """Log when a tool is about to be called."""
+        logger.info(
+            "Tool call started: %s (agent=%s)",
+            tool.name,
+            agent.name,
+        )
+
+    async def on_tool_end(
+        self,
+        context: RunContextWrapper[AgentContext],
+        agent: Agent[AgentContext],
+        tool: Tool,
+        result: str,
+    ) -> None:
+        """Log when a tool call completes."""
+        # Truncate long results for readability
+        result_preview = result[:200] + "..." if len(result) > 200 else result
+        logger.info(
+            "Tool call completed: %s (agent=%s) -> %s",
+            tool.name,
+            agent.name,
+            result_preview,
+        )
+
 
 # Marker for machine-readable CI analysis
 CI_FIXER_MARKER = "<!-- ci-fixer-agent-report -->"
@@ -362,11 +398,13 @@ async def run_ci_fixer_agent_async(
     )
     
     try:
+        run_config = RunConfig(hooks=ToolLoggingHooks())
         result = await Runner.run(
             agent,
             "Please analyze the CI failures and provide suggestions for fixing them.",
             context=context,
             max_turns=15,
+            run_config=run_config,
         )
         return result.final_output_as(CIAnalysis)
     except Exception as exc:
