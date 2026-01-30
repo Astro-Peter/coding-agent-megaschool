@@ -369,11 +369,12 @@ def get_workflow_logs(
     workflow_run_id: int,
     job_name_filter: str = "",
 ) -> dict[str, Any]:
-    """Get logs for a specific workflow run. Can optionally filter by job name.
+    """Get logs for a specific workflow run.
     
     Args:
         workflow_run_id: The ID of the workflow run (from list_failed_workflows).
-        job_name_filter: Optional filter to only get logs for jobs containing this string.
+        job_name_filter: Optional filter by JOB name (e.g. "build (3.10)"), NOT step name.
+            Leave empty to get logs from all jobs. Job names come from get_workflow_jobs.
         
     Returns parsed log data including extracted error lines and log content.
     """
@@ -386,12 +387,20 @@ def get_workflow_logs(
         if not logs:
             return {"ok": False, "message": "No logs found for this workflow run"}
         
+        # Collect all job names for error messages
+        all_job_names = [l.job_name for l in logs]
+        
         # Filter by job name if specified
         if job_name_filter:
-            logs = [l for l in logs if job_name_filter.lower() in l.job_name.lower()]
-        
-        if not logs:
-            return {"ok": False, "message": f"No logs found matching job filter: {job_name_filter}"}
+            filtered_logs = [l for l in logs if job_name_filter.lower() in l.job_name.lower()]
+            if not filtered_logs:
+                return {
+                    "ok": False, 
+                    "message": f"No jobs matching filter '{job_name_filter}'",
+                    "available_jobs": all_job_names,
+                    "hint": "Use one of the available_jobs names, or omit the filter to get all logs"
+                }
+            logs = filtered_logs
         
         result = []
         for log in logs:

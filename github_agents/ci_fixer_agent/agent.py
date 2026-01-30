@@ -328,16 +328,19 @@ Use the CI tools to gather error information, then analyze and provide suggestio
 
 2. **`list_failed_workflows`** - Get the list of failed workflow runs and their IDs.
 
-3. **`get_workflow_logs`** - Use the workflow ID to get the actual log output with detailed error messages.
-   Essential for understanding test failures and build errors.
+3. **`get_workflow_logs(workflow_run_id, job_name_filter="")`** - Get log output for a workflow run.
+   - `workflow_run_id`: Required. Get this from `list_failed_workflows`.
+   - `job_name_filter`: Optional. Filter by JOB name (e.g. "build (3.10)"), NOT step name.
+     Leave empty to get all logs. If unsure, omit this parameter.
 
-4. **`get_workflow_jobs`** - See which specific jobs/steps failed within a workflow.
+4. **`get_workflow_jobs`** - See which specific jobs and steps failed. Use this to get exact job names
+   if you need to filter logs.
 
 ### Recommended Approach
 
 1. Call `get_check_annotations` first - this often has structured error info with file paths and line numbers
 2. Call `list_failed_workflows` to get workflow IDs
-3. Call `get_workflow_logs` with the workflow ID to get full log output
+3. Call `get_workflow_logs(workflow_run_id)` WITHOUT a filter to get all logs
 4. Analyze the errors and provide your suggestions
 
 ## Focus Areas
