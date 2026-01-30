@@ -16,7 +16,7 @@ from agents import Agent, Runner
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
 from github_agents.common.context import AgentContext
-from github_agents.common.github_client import CheckRunData, GitHubClient, IssueData
+from github_agents.common.github_client import GitHubClient, IssueData
 from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_reviewer_tools
 from github_agents.reviewer_agent.prompts import build_reviewer_instructions
@@ -82,27 +82,6 @@ def _get_iteration_count(client: GitHubClient, issue_number: int) -> int:
             except (ValueError, IndexError):
                 pass
     return 1
-
-
-def _format_ci_status(check_runs: list[CheckRunData]) -> str:
-    """Format CI check results for the review prompt."""
-    if not check_runs:
-        return "No CI checks found."
-    
-    lines = ["CI Status:"]
-    all_passed = True
-    for check in check_runs:
-        status_emoji = "✅" if check.conclusion == "success" else "❌"
-        if check.conclusion != "success":
-            all_passed = False
-        lines.append(f"  {status_emoji} {check.name}: {check.conclusion}")
-    
-    if all_passed:
-        lines.append("\nAll CI checks passed.")
-    else:
-        lines.append("\nSome CI checks are failing.")
-    
-    return "\n".join(lines)
 
 
 def _format_diff_summary(files: list, max_patch_size: int = 5000) -> str:
@@ -283,7 +262,6 @@ def _build_reviewer_agent(
     pr_title: str,
     pr_body: str,
     diff_summary: str,
-    ci_status: str,
     issue: IssueData | None,
     iteration: int,
     max_iterations: int,
@@ -293,7 +271,6 @@ def _build_reviewer_agent(
         pr_title=pr_title,
         pr_body=pr_body,
         diff_summary=diff_summary,
-        ci_status=ci_status,
         issue_number=issue.number if issue else None,
         issue_title=issue.title if issue else None,
         issue_body=issue.body if issue else None,
@@ -316,7 +293,6 @@ async def run_reviewer_agent_async(
     pr_title: str,
     pr_body: str,
     diff_summary: str,
-    ci_status: str,
     issue: IssueData | None,
     context: AgentContext,
 ) -> ReviewDecision:
@@ -325,7 +301,6 @@ async def run_reviewer_agent_async(
         pr_title=pr_title,
         pr_body=pr_body,
         diff_summary=diff_summary,
-        ci_status=ci_status,
         issue=issue,
         iteration=context.iteration,
         max_iterations=context.max_iterations,
@@ -370,16 +345,6 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         logger.warning("Failed to get PR diff: %s", e)
         diff_summary = "Could not fetch diff."
     
-    # Get CI status
-    try:
-        check_runs = client.get_check_runs(pr_number)
-        check_runs = [c for c in check_runs if "reviewer" not in c.name.lower()]
-        ci_status = _format_ci_status(check_runs)
-    except Exception as e:
-        logger.warning("Failed to get CI status: %s", e)
-        ci_status = "Could not fetch CI status."
-        check_runs = []
-    
     # Extract linked issue
     issue_number = _extract_issue_number(pr.body)
     issue: IssueData | None = None
@@ -414,7 +379,6 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         pr_title=pr.title,
         pr_body=pr.body,
         diff_summary=diff_summary,
-        ci_status=ci_status,
         issue=issue,
         context=context,
     )
@@ -425,19 +389,6 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
             status="APPROVED",
             summary=f"**Forced approval after {MAX_ITERATIONS} iterations.** Original assessment: {decision.summary}",
             issues=["This PR exceeded the maximum iteration limit and was auto-approved."] + decision.issues,
-            suggestions=decision.suggestions,
-        )
-    
-    # Check if CI is failing
-    ci_failing = any(
-        c.status == "completed" and c.conclusion not in ("success", "skipped", "neutral")
-        for c in check_runs
-    )
-    if ci_failing and decision.status == "APPROVED" and not force_approve:
-        decision = ReviewDecision(
-            status="CHANGES_REQUESTED",
-            summary=decision.summary,
-            issues=decision.issues + ["CI checks are failing. Please fix before approval."],
             suggestions=decision.suggestions,
         )
     

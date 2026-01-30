@@ -12,8 +12,6 @@ REVIEWER_INSTRUCTIONS_TEMPLATE = """You are an expert code reviewer. Analyze the
 
 {issue_context}
 
-### {ci_status}
-
 ### Code Changes
 {diff_summary}
 
@@ -24,8 +22,9 @@ Review this pull request and determine if it should be approved or if changes ar
 Consider:
 1. Does the implementation match the issue requirements?
 2. Are there any bugs, errors, or code quality issues?
-3. Are CI checks passing?
-4. Is the code well-structured and maintainable?
+3. Is the code well-structured and maintainable?
+
+Note: CI checks are handled separately. Focus only on code quality and correctness.
 
 If this is iteration {max_iterations}/{max_iterations}, you should approve with warnings rather than requesting more changes.
 
@@ -51,7 +50,6 @@ def build_reviewer_instructions(
     pr_title: str,
     pr_body: str,
     diff_summary: str,
-    ci_status: str,
     issue_number: int | None = None,
     issue_title: str | None = None,
     issue_body: str | None = None,
@@ -71,7 +69,6 @@ def build_reviewer_instructions(
         pr_title=pr_title,
         pr_body=pr_body,
         diff_summary=diff_summary,
-        ci_status=ci_status,
         issue_context=issue_context,
         iteration=iteration,
         max_iterations=max_iterations,
