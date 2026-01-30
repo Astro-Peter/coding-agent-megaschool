@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from agents import Agent, RunConfig, Runner
+from agents import Agent, Runner
 from agents.agent import StopAtTools
 
 from github_agents.common.code_index import CodeIndex
@@ -287,6 +287,7 @@ def _build_coder_agent(
     
     return Agent[AgentContext](
         name="Coder",
+        model=get_model_name(),
         instructions=instructions,
         tools=get_coder_tools(),
         tool_use_behavior=StopAtTools(stop_at_tool_names=["mark_complete"]),
@@ -304,14 +305,11 @@ async def run_coder_agent_async(
     agent = _build_coder_agent(issue, plan, context)
     
     try:
-        # Use LiteLLM model via RunConfig
-        run_config = RunConfig(model=get_model_name())
         result = await Runner.run(
             agent,
             "Please implement the changes according to the plan. Start by exploring the codebase structure.",
             context=context,
             max_turns=MAX_AGENT_ITERATIONS,
-            run_config=run_config,
         )
         
         # Extract the summary from the mark_complete tool output

@@ -8,11 +8,11 @@ import os
 
 from pydantic import BaseModel
 
-from agents import Agent, RunConfig, Runner
+from agents import Agent, Runner
 
 from github_agents.common.config import get_issue_number, load_config
 from github_agents.common.context import AgentContext
-from github_agents.common.sdk_config import configure_sdk, get_model_name, get_model_name
+from github_agents.common.sdk_config import configure_sdk, get_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,12 @@ Issue body:
 {issue_body}"""
     
     try:
-        # Use LiteLLM model via RunConfig
-        run_config = RunConfig(model=get_model_name())
+        # Create agent with LiteLLM model
+        agent = _create_planner_agent()
         result = await Runner.run(
-            planner_agent,
+            agent,
             prompt,
             context=context,
-            run_config=run_config,
         )
         return result.final_output_as(Plan)
     except Exception as exc:
