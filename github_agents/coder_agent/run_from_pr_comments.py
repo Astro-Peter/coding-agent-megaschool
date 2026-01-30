@@ -56,7 +56,7 @@ async def run_coder_from_pr_async(*, context: AgentContext) -> None:
     pr_comments = client.list_pr_comments(pr_number)
     comment_history = [
         {
-            'author': comment.author,
+            'author': comment.user_login,
             'body': comment.body,
             'created_at': comment.created_at.isoformat() if hasattr(comment.created_at, 'isoformat') else str(comment.created_at),
         }
