@@ -53,6 +53,6 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.issue_number }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL_STRUCTURED || vars.LLM_MODEL || 'gpt-4o-mini' }}
           PLAN_COMMAND: ${{ inputs.plan_command }}
         run: python -m github_agents.planner_agent.agent

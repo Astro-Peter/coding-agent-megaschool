@@ -81,7 +81,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL_STRUCTURED || vars.LLM_MODEL || 'gpt-4o-mini' }}
           GITHUB_WORKSPACE: ${{ github.workspace }}/repo
         run: python -m github_agents.reviewer_agent.agent
 
