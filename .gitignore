@@ -2,11 +2,6 @@
 .env
 .env.*
 
-# Watcher state files
-.local_watcher_state.json
-.local_pr_watcher_state.json
-.local_issue_watcher_state.json
-
 # Python
 __pycache__/
 *.py[cod]

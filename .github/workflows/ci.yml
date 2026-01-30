@@ -24,10 +24,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run ruff (linting)
-        run: ruff check agents/ scripts/ tests/
+        run: ruff check github_agents/ tests/
 
       - name: Run black (formatting check)
-        run: black --check agents/ scripts/ tests/
+        run: black --check github_agents/ tests/
 
   typecheck:
     name: Type Check
@@ -46,7 +46,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run mypy
-        run: mypy agents/ --ignore-missing-imports
+        run: mypy github_agents/ --ignore-missing-imports
 
   test:
     name: Tests

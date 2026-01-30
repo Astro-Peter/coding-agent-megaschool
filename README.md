@@ -1,279 +1,306 @@
 # Megaschool Coding Agents
 
-Automated SDLC agent system for GitHub that handles the full software development lifecycle: from issue analysis to code implementation to code review.
+Автоматизированная система агентов SDLC для GitHub, которая охватывает полный цикл разработки ПО: от анализа задач до написания кода и ревью.
 
-## Overview
+## Обзор
 
-This system automates the software development lifecycle using AI agents:
+Система автоматизирует жизненный цикл разработки ПО с помощью ИИ-агентов:
 
-1. **Planner Agent** - Analyzes issues and creates implementation plans
-2. **Coder Agent** - Implements code changes and creates pull requests (CLI tool)
-3. **Reviewer Agent** - Reviews PRs, analyzes CI results, and provides feedback (runs in GitHub Actions)
+1. **Planner Agent** — анализирует задачи и создаёт планы реализации
+2. **Coder Agent** — реализует изменения в коде и создаёт pull request'ы (CLI-инструмент)
+3. **Reviewer Agent** — ревьюит PR, анализирует результаты CI и даёт обратную связь (запускается в GitHub Actions)
+4. **CI Fixer Agent** — Анализирует и показывает ошибки CI для Coder agent (линтинг, типы, тесты)
 
-### SDLC Flow
+## Быстрый старт
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                                                                     │
-│  1. User creates Issue ──► Planner Agent creates plan              │
-│                                    │                                │
-│                                    ▼                                │
-│  2. Coder Agent implements plan ──► Creates Pull Request           │
-│                                          │                          │
-│                                          ▼                          │
-│  3. CI runs quality checks ──► Reviewer Agent analyzes PR          │
-│                                          │                          │
-│                            ┌─────────────┴─────────────┐            │
-│                            │                           │            │
-│                            ▼                           ▼            │
-│                    APPROVED ──► Ready        CHANGES_REQUESTED      │
-│                    for merge                         │              │
-│                                                      ▼              │
-│                                    4. Coder Agent fixes issues      │
-│                                              │                      │
-│                                              └──► Back to step 3    │
-│                                                                     │
-│                    (Max 5 iterations before forced approval)        │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### Вариант 1: GitHub Actions (рекомендуется)
 
-## Quick Start
+Система может работать полностью в GitHub Actions:
 
-### Option 1: Docker (recommended)
+1. Настройте секреты репозитория (см. ниже)
+2. Создайте issue с описанием задачи
+3. Workflow автоматически:
+   - Запускает Planner Agent при создании issue
+   - Запускает Coder Agent для реализации плана
+   - Запускает Reviewer Agent при создании PR
+   - Повторяет цикл до approve или достижения максимума итераций
 
-```bash
-cp .env.example .env
-# Edit .env with your values (GH_TOKEN, LLM_API_TOKEN, etc.)
-docker-compose up -d
-```
+## Использование в других репозиториях (Reusable Workflows)
 
-### Option 2: Local Python
+Вы можете использовать SDLC-агенты в любом репозитории без копирования кода агентов.
+
+#### Примеры Workflows (`examples/workflows/`)
+
+| Файл | Описание | Триггер |
+|------|----------|---------|
+| `sdlc-agent.yml` | Основной SDLC workflow: Planner → Coder | Метка `agent` на issue |
+| `sdlc-ci-fixer.yml` | Мониторинг CI: анализ ошибок → автоисправление | PR создан/обновлён |
+| `sdlc-pr-fix.yml` | Исправление PR по комментариям | Метка `fix-issues` на PR |
+| `sdlc-reviewer.yml` | Ревью PR → автоисправление при запросе изменений | Метка `agent-review` на PR |
+
+#### Быстрая настройка
+
+1. **Скопируйте нужные workflow** в целевой репозиторий:
 
 ```bash
-pip install -e .
-cp .env.example .env
-# Edit .env with your values
-./scripts/run_watcher.sh
+# В вашем целевом репозитории
+mkdir -p .github/workflows
+
+# Основной SDLC workflow (Planner + Coder)
+curl -o .github/workflows/sdlc-agent.yml \
+  https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-agent.yml
+
+# CI мониторинг и автоисправление (опционально)
+curl -o .github/workflows/sdlc-ci-fixer.yml \
+  https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-ci-fixer.yml
+
+# Ревьюер (опционально)
+curl -o .github/workflows/sdlc-reviewer.yml \
+  https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-reviewer.yml
+
+# PR фиксер (опционально)
+curl -o .github/workflows/sdlc-pr-fix.yml \
+  https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-pr-fix.yml
 ```
 
-### Option 3: GitHub Actions Only
+2. **Добавьте секреты** в целевой репозиторий (`Settings > Secrets > Actions`):
+   - `GH_TOKEN`: GitHub Personal Access Token с правами `repo`
+   - `LLM_API_TOKEN`: Ваш API-ключ LLM
 
-The system can run entirely in GitHub Actions:
+3. **Опциональные переменные** (`Settings > Variables > Actions`):
+   - `LLM_API_URL`: URL API-эндпоинта (по умолчанию: `https://openrouter.ai/api/v1`)
+   - `LLM_MODEL`: Название модели (по умолчанию: `gpt-4o-mini`)
+   - `LLM_MODEL_STRUCTURED`: Модель для структурированного вывода (для reviewer/ci-fixer)
 
-1. Configure repository secrets (see below)
-2. Create an issue with your task description
-3. The workflow automatically:
-   - Runs the Planner Agent on issue creation
-   - Runs the Coder Agent to implement the plan
-   - Runs the Reviewer Agent on PR creation
-   - Loops until approved or max iterations reached
+4. **Используйте:**
+   - Создайте issue и добавьте метку `agent` — запустится Planner → Coder
+   - CI мониторинг запустится автоматически при создании PR
+   - При провале CI — агент проанализирует ошибки и исправит
+   - При успехе CI — добавится метка `agent-review` для ревью
 
-## Execution Models
+#### Полный цикл автоматизации
 
-### Local Watcher Mode (Default)
+```
+Issue + метка "agent"
+       │
+       ▼
+   Planner Agent ──► создаёт план в комментарии
+       │
+       ▼
+   Coder Agent ──► создаёт PR с реализацией
+       │
+       ▼
+┌──► CI проверки ◄──────────────────────────┐
+│      │                                     │
+│      ▼                                     │
+│   CI Monitor                               │
+│      │                                     │
+│      ├─── провал ──► CI Fixer ──► коммит ──┘
+│      │
+│      └─── успех ──► добавляет "agent-review"
+│                           │
+│                           ▼
+│                    Reviewer Agent
+│                           │
+│      ┌────────────────────┴────────────────┐
+│      │                                     │
+│      ▼                                     ▼
+│   APPROVED ──► готов              CHANGES_REQUESTED
+│   к мёрджу                                 │
+│                                            ▼
+└────────────────────────────── Coder Agent исправляет
+```
 
-The watcher runs locally and orchestrates all agents:
-
-- **Planner**: Runs locally when new issues are detected
-- **Coder**: Runs locally, implements changes, creates PRs
-- **Reviewer**: Runs in GitHub Actions on PR events
-
-Start with: `docker-compose up -d` or `./scripts/run_watcher.sh`
-
-### Full GitHub Actions Mode
-
-All agents run in GitHub Actions:
-
-- Planner runs on issue creation
-- Coder runs automatically after plan
-- Reviewer runs on PR creation/update and after CI checks complete
-
-No local setup needed - just configure secrets and create issues.
-
-### Use on Other Repos (Reusable Workflows)
-
-You can use the SDLC agents on any repository without copying the agent code:
-
-1. **Copy the example workflow** to your target repo:
-   ```bash
-   # In your target repo
-   mkdir -p .github/workflows
-   curl -o .github/workflows/sdlc-agent.yml \
-     https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-agent.yml
-   ```
-
-2. **Add secrets** to your target repo (`Settings > Secrets > Actions`):
-   - `GH_TOKEN`: A GitHub Personal Access Token with `repo` scope
-   - `LLM_API_TOKEN`: Your LLM API key
-
-3. **Optional variables** (`Settings > Variables > Actions`):
-   - `LLM_API_URL`: API endpoint URL
-   - `LLM_MODEL`: Model name
-
-4. **Create an issue** - the agents will run automatically!
-
-**Note:** You need a Personal Access Token (not the default `GITHUB_TOKEN`) because the reusable workflows run in the megaschool repo context and need to access your target repo.
+**Примечание:** Вам нужен Personal Access Token (а не стандартный `GITHUB_TOKEN`), потому что reusable workflows запускаются в контексте репозитория megaschool и нуждаются в доступе к вашему целевому репозиторию.
 
 ## GitHub Actions Workflows
 
-### Issue Workflow (`.github/workflows/issue.yml`)
+### Основные Workflows
 
-Triggers:
-- **New issue created**: Runs Planner, then automatically runs Coder
+| Workflow | Файл | Описание |
+|----------|------|----------|
+| **Issue Workflow** | `issue.yml` | Запускает Planner и Coder при создании issue |
+| **PR Workflow** | `pr.yml` | Запускает Reviewer Agent при создании/обновлении PR |
+| **PR Fix Workflow** | `pr-fix.yml` | Запускает Coder для исправления проблем по метке `fix-issues` |
+| **CI Workflow** | `ci.yml` | Проверки качества кода (ruff, black, mypy, pytest) |
 
-### PR Workflow (`.github/workflows/pr.yml`)
+### Reusable Workflows
 
-Triggers:
-- **PR created/updated**: Runs Reviewer Agent
-- **CI checks complete**: Re-runs Reviewer with CI results
+Переиспользуемые workflows для интеграции в другие репозитории:
+
+| Workflow | Файл | Описание |
+|----------|------|----------|
+| **Reusable Planner** | `reusable-planner.yml` | Анализ issue и создание плана |
+| **Reusable Coder** | `reusable-coder.yml` | Реализация плана в коде |
+| **Reusable Reviewer** | `reusable-reviewer.yml` | Ревью PR и анализ CI |
+| **Reusable PR Fix** | `reusable-pr-fix.yml` | Исправление проблем в PR |
 
 ### CI Workflow (`.github/workflows/ci.yml`)
 
-Triggers:
-- **PR created/updated**: Runs quality checks (ruff, black, mypy, pytest)
-- **Push to main**: Runs quality checks
+Запускает три параллельных job'а:
+- **lint**: Проверка ruff и black (форматирование)
+- **typecheck**: Проверка типов mypy
+- **test**: Запуск pytest
 
-## Configuration
+Триггеры:
+- **Создание/обновление PR**: Запускает все проверки
+- **Push в main/master**: Запускает все проверки
 
-### Required Secrets
+## Конфигурация
 
-Configure these in your repository settings (`Settings > Secrets and variables > Actions`):
+### Обязательные секреты
 
-| Secret | Description |
-|--------|-------------|
-| `LLM_API_TOKEN` | API token for the LLM provider (OpenAI, etc.) |
+Настройте их в настройках репозитория (`Settings > Secrets and variables > Actions`):
 
-Note: The workflows use GitHub's built-in `GITHUB_TOKEN` secret, mapped to `GH_TOKEN` for the agents.
+| Секрет | Описание |
+|--------|----------|
+| `LLM_API_TOKEN` | API-токен для LLM-провайдера (OpenAI и т.д.) |
 
-### Optional Variables
+Примечание: Workflows используют встроенный секрет GitHub `GITHUB_TOKEN`, маппящийся на `GH_TOKEN` для агентов.
 
-Configure in `Settings > Secrets and variables > Actions > Variables`:
+### Опциональные переменные
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLM_API_URL` | API endpoint URL | `https://openrouter.ai/api/v1` |
-| `LLM_MODEL` | Model name | `gpt-4o-mini` |
+Настройте в `Settings > Secrets and variables > Actions > Variables`:
 
-### Environment Variables (Local/Docker)
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `LLM_API_URL` | URL API-эндпоинта | `https://openrouter.ai/api/v1` |
+| `LLM_MODEL` | Название модели | `gpt-4o-mini` |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GH_TOKEN` | GitHub API token (with repo access) | Required |
-| `GH_REPOSITORY` | Repository in `owner/repo` format | Required |
-| `LLM_API_TOKEN` | LLM API token | Required |
-| `LLM_API_URL` | LLM API endpoint | `https://openrouter.ai/api/v1` |
-| `LLM_MODEL` | Model to use | `gpt-4o-mini` |
-| `POLL_SECONDS` | Polling interval for watcher | `15` |
-| `AUTO_CODE_AFTER_PLAN` | Auto-run coder after plan | `true` |
-| `LOG_LEVEL` | Logging level | `INFO` |
+Для локального запуска настройте .env как в ./.github/workflows/reusable-coder.yml
 
-## Iteration Limits
+## Лимиты итераций
 
-The system has built-in safeguards against infinite loops:
+Система имеет встроенные защиты от бесконечных циклов:
 
-- **Coder Agent**: Maximum 5 development iterations (`MAX_DEV_ITERATIONS`)
-- **Reviewer Agent**: Maximum 5 review iterations before forced approval (`MAX_ITERATIONS`)
-- **Agent Loop**: Maximum 50 LLM calls per agent run (`MAX_AGENT_ITERATIONS`)
+- **Coder Agent**: Максимум 5 итераций разработки (`MAX_DEV_ITERATIONS`)
+- **Reviewer Agent**: Максимум 5 итераций ревью до принудительного approve (`MAX_ITERATIONS`)
+- **Agent Loop**: Максимум 50 вызовов LLM за один запуск агента (`MAX_AGENT_ITERATIONS`)
 
-After max iterations, the Reviewer will force-approve with warnings.
+После достижения максимума итераций Reviewer принудительно approve'ит с предупреждениями.
 
-## Development
+## Разработка
 
-### Install Dev Dependencies
+### Установка dev-зависимостей
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-### Run Quality Checks
+### Запуск проверок качества
 
 ```bash
-# Linting
-ruff check agents/ scripts/ tests/
+# Линтинг
+ruff check github_agents/ tests/
 
-# Formatting
-black agents/ scripts/ tests/
+# Форматирование
+black github_agents/ tests/
 
-# Type checking
-mypy agents/
+# Проверка типов
+mypy github_agents/ --ignore-missing-imports
 
-# Tests
-pytest tests/ -v
+# Тесты
+pytest tests/ -v --tb=short
 ```
 
-## Project Structure
+## Структура проекта
 
 ```
 megaschool/
-├── .github/workflows/     # GitHub Actions workflows
-│   ├── issue.yml          # Issue/Planner/Coder workflow
-│   ├── pr.yml             # PR Review workflow
-│   └── ci.yml             # Quality checks workflow
-├── agents/
-│   ├── common/            # Shared utilities
-│   │   ├── github_client.py
-│   │   ├── openai_client.py
-│   │   └── code_index.py
-│   ├── planner_agent/     # Issue analysis and planning
-│   ├── coder_agent/       # Code implementation
-│   ├── reviewer_agent/    # PR review
-│   └── orchestrator.py    # Agent coordination
-├── scripts/
-│   ├── watcher.py         # Event polling and orchestration
-│   └── run_watcher.sh
-├── tests/                 # Test files
+├── .github/workflows/           # GitHub Actions workflows
+│   ├── issue.yml                # Issue/Planner/Coder workflow
+│   ├── pr.yml                   # PR Review workflow
+│   ├── pr-fix.yml               # Исправление проблем в PR
+│   ├── ci.yml                   # Проверки качества
+│   ├── reusable-planner.yml     # Переиспользуемый Planner
+│   ├── reusable-coder.yml       # Переиспользуемый Coder
+│   ├── reusable-reviewer.yml    # Переиспользуемый Reviewer
+│   └── reusable-pr-fix.yml      # Переиспользуемый PR Fix
+├── github_agents/               # Код агентов
+│   ├── common/                  # Общие утилиты
+│   │   ├── github_client.py     # Клиент GitHub API
+│   │   ├── config.py            # Конфигурация
+│   │   ├── context.py           # Контекст выполнения
+│   │   ├── tools.py             # Инструменты агентов
+│   │   ├── sdk_config.py        # Конфигурация SDK
+│   │   └── code_index.py        # Индексация кода
+│   ├── planner_agent/           # Анализ задач и планирование
+│   │   ├── agent.py
+│   │   └── prompts.py
+│   ├── coder_agent/             # Реализация кода
+│   │   ├── agent.py
+│   │   ├── messages.py
+│   │   ├── prompts.py
+│   │   ├── run_from_plan.py     # Запуск из плана
+│   │   ├── run_from_pr_comments.py  # Запуск для исправлений
+│   │   └── runner_utils.py
+│   ├── reviewer_agent/          # Ревью PR
+│   │   ├── agent.py
+│   │   └── prompts.py
+│   ├── ci_fixer_agent/          # Исправление CI ошибок
+│   │   ├── agent.py
+│   │   └── prompts.py
+│   └── orchestrator.py          # Координация агентов
+├── configs/                     # Файлы конфигурации
+│   ├── logging.yaml             # Настройки логирования
+│   └── settings.yaml            # Общие настройки
+├── examples/                    # Примеры для других репозиториев
+│   └── workflows/               # Примеры workflows
+│       ├── sdlc-agent.yml       # Plan + Code workflow
+│       ├── sdlc-ci-fixer.yml    # CI fixer workflow
+│       ├── sdlc-pr-fix.yml      # PR fix workflow
+│       └── sdlc-reviewer.yml    # Reviewer workflow
+├── tests/                       # Тесты
+│   ├── test_issue_parsing.py
+│   └── test_review_report.py
+├── .env.example                 # Пример переменных окружения
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
 └── README.md
 ```
 
-## Example Usage
+## Примеры использования
 
-### Creating an Issue
+### Создание Issue
 
-Create an issue with a clear task description:
+Создайте issue с чётким описанием задачи:
 
 ```
-Title: Add user authentication endpoint
+Заголовок: Добавить эндпоинт аутентификации пользователя
 
-Body:
-Implement a /login endpoint that:
-- Accepts username and password
-- Validates credentials
-- Returns a JWT token on success
-- Returns 401 on failure
+Описание:
+Реализовать эндпоинт /login, который:
+- Принимает имя пользователя и пароль
+- Валидирует учётные данные
+- Возвращает JWT-токен при успехе
+- Возвращает 401 при ошибке
 ```
 
-The system will:
-1. Planner Agent analyzes the issue and creates an implementation plan
-2. Coder Agent implements the changes and creates a PR
-3. CI runs quality checks
-4. Reviewer Agent reviews the PR and CI results
-5. If issues found, Coder Agent fixes them
-6. Repeat until approved
+Система выполнит:
+1. Planner Agent анализирует issue и создаёт план реализации
+2. Coder Agent реализует изменения и создаёт PR
+3. CI запускает проверки качества -> при фейле CI Agent анализирует их и возвращаемся во второй шаг
+4. Reviewer Agent ревьюит PR и результаты CI
+5. При обнаружении проблем Coder Agent исправляет их
+6. Повторяет до approve
 
-### Example PR Comment from Reviewer
+### Пример комментария Reviewer к PR
 
-The Reviewer Agent posts:
-- **PR Review**: Formal GitHub review (APPROVE or REQUEST_CHANGES)
-- **PR Comment**: Detailed feedback with machine-readable data
-- **Actions Summary**: Overview in the workflow run summary
+Reviewer Agent публикует:
+- **PR Review**: Формальный GitHub-ревью (APPROVE или REQUEST_CHANGES)
+- **PR Comment**: Детальный фидбек с машиночитаемыми данными
 
-## Troubleshooting
+## Решение проблем
 
-### Agent not triggering
+### Агент не срабатывает
 
-- Check that `LLM_API_TOKEN` secret is set
-- Verify `GH_TOKEN` has write permissions
-- Check Actions logs for errors
+- Проверьте, что секрет `LLM_API_TOKEN` установлен
+- Убедитесь, что `GH_TOKEN` имеет права на запись
+- Проверьте логи Actions на наличие ошибок
 
-### Infinite loop prevention
+### Защита от бесконечных циклов
 
-The system automatically stops after max iterations. Check:
-- Issue labels for `iteration-N` to see current count
-- PR comments for forced approval messages
-
-### CI failures blocking approval
-
-The Reviewer will request changes if CI is failing. Fix the CI issues first, or the Reviewer will continue to block.
+Система автоматически останавливается после максимума итераций. Проверьте:
+- Метки issue `iteration-N` для просмотра текущего счётчика
+- Комментарии к PR для сообщений о принудительном approve

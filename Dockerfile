@@ -10,9 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && \
 COPY pyproject.toml README.md ./
 
 # Install package in editable mode
-COPY agents/ ./agents/
-COPY scripts/ ./scripts/
+COPY github_agents/ ./github_agents/
 RUN pip install --no-cache-dir -e .
 
-# Default command runs the unified watcher
-CMD ["python", "-m", "scripts.watcher"]
+# Default command runs the coder agent from plan
+CMD ["python", "-m", "github_agents.coder_agent.run_from_plan"]
