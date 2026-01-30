@@ -24,7 +24,7 @@ jobs:
   plan:
     name: Plan
     if: github.event_name == 'issues' || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/plan'))
-    uses: Astro-Peter/megaschool/.github/workflows/reusable-planner.yml@main
+    uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-planner.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
       plan_command: ${{ github.event.comment.body || 'issue opened' }}
@@ -37,7 +37,7 @@ jobs:
     name: Code (auto)
     needs: plan
     if: github.event_name == 'issues' && needs.plan.outputs.plan_created == 'true'
-    uses: Astro-Peter/megaschool/.github/workflows/reusable-coder.yml@main
+    uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-coder.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
     secrets:
@@ -48,7 +48,7 @@ jobs:
   code:
     name: Code (manual)
     if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/code')
-    uses: Astro-Peter/megaschool/.github/workflows/reusable-coder.yml@main
+    uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-coder.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
     secrets:
@@ -59,7 +59,7 @@ jobs:
   review:
     name: Review
     if: github.event_name == 'pull_request'
-    uses: Astro-Peter/megaschool/.github/workflows/reusable-reviewer.yml@main
+    uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-reviewer.yml@main
     with:
       pr_number: ${{ github.event.pull_request.number }}
     secrets:

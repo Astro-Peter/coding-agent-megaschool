@@ -39,7 +39,7 @@ jobs:
       - name: Checkout agent code
         uses: actions/checkout@v4
         with:
-          repository: Astro-Peter/megaschool
+          repository: Astro-Peter/coding-agent-megaschool
           path: agent
 
       - name: Set up Python

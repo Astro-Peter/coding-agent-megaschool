@@ -99,7 +99,7 @@ You can use the SDLC agents on any repository without copying the agent code:
    # In your target repo
    mkdir -p .github/workflows
    curl -o .github/workflows/sdlc-agent.yml \
-     https://raw.githubusercontent.com/Astro-Peter/megaschool/main/examples/workflows/sdlc-agent.yml
+     https://raw.githubusercontent.com/Astro-Peter/coding-agent-megaschool/main/examples/workflows/sdlc-agent.yml
    ```
 
 2. **Add secrets** to your target repo (`Settings > Secrets > Actions`):
