@@ -301,8 +301,8 @@ def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
     load_dotenv()
 
-    token = _require_env("GITHUB_TOKEN")
-    repo = _require_env("GITHUB_REPOSITORY")
+    token = _require_env("GH_TOKEN")
+    repo = _require_env("GH_REPOSITORY")
     _require_env("LLM_API_TOKEN")
     _require_env("LLM_API_URL")
 

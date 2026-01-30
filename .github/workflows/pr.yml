@@ -48,8 +48,8 @@ jobs:
       - name: Run Reviewer Agent
         if: steps.pr_number.outputs.pr_number != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr_number.outputs.pr_number }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}

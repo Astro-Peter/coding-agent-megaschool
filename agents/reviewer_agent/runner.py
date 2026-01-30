@@ -580,8 +580,8 @@ def _run_tool(name: str, raw_arguments: str | None, tool_map: dict) -> dict:
 def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
     
-    token = _require_env("GITHUB_TOKEN")
-    repo = _require_env("GITHUB_REPOSITORY")
+    token = _require_env("GH_TOKEN")
+    repo = _require_env("GH_REPOSITORY")
     pr_number_raw = _require_env("PR_NUMBER")
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
     llm_token = os.getenv("LLM_API_TOKEN")

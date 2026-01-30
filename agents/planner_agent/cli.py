@@ -63,8 +63,8 @@ def run_planner(
 
 
 def main() -> int:
-    token = _require_env("GITHUB_TOKEN")
-    repo = _require_env("GITHUB_REPOSITORY")
+    token = _require_env("GH_TOKEN")
+    repo = _require_env("GH_REPOSITORY")
     issue_number_raw = _require_env("ISSUE_NUMBER")
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
     llm_token = os.getenv("LLM_API_TOKEN")

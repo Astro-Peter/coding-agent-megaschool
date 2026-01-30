@@ -43,7 +43,7 @@ This system automates the software development lifecycle using AI agents:
 
 ```bash
 cp .env.example .env
-# Edit .env with your values (GITHUB_TOKEN, LLM_API_TOKEN, etc.)
+# Edit .env with your values (GH_TOKEN, LLM_API_TOKEN, etc.)
 docker-compose up -d
 ```
 
@@ -121,7 +121,7 @@ Configure these in your repository settings (`Settings > Secrets and variables >
 |--------|-------------|
 | `LLM_API_TOKEN` | API token for the LLM provider (OpenAI, etc.) |
 
-Note: `GITHUB_TOKEN` is automatically provided by GitHub Actions.
+Note: The workflows use GitHub's built-in `GITHUB_TOKEN` secret, mapped to `GH_TOKEN` for the agents.
 
 ### Optional Variables
 
@@ -137,8 +137,8 @@ Configure in `Settings > Secrets and variables > Actions > Variables`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GITHUB_TOKEN` | GitHub API token (with repo access) | Required |
-| `GITHUB_REPOSITORY` | Repository in `owner/repo` format | Required |
+| `GH_TOKEN` | GitHub API token (with repo access) | Required |
+| `GH_REPOSITORY` | Repository in `owner/repo` format | Required |
 | `LLM_PROVIDER` | LLM provider (`openai` or `yandex`) | `openai` |
 | `LLM_API_TOKEN` | LLM API token | Required |
 | `LLM_API_URL` | LLM API endpoint | `https://api.openai.com/v1` |
@@ -252,7 +252,7 @@ The Reviewer Agent posts:
 ### Agent not triggering
 
 - Check that `LLM_API_TOKEN` secret is set
-- Verify `GITHUB_TOKEN` has write permissions
+- Verify `GH_TOKEN` has write permissions
 - Check Actions logs for errors
 
 ### Infinite loop prevention
