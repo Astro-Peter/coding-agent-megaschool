@@ -7,7 +7,7 @@ from pathlib import Path
 from github_agents.common.context import AgentContext
 from github_agents.common.github_client import GitHubClient
 from github_agents.common.sdk_config import configure_sdk
-from github_agents.coder_agent.agent import run_coder, run_coder_async
+from github_agents.coder_agent.run_from_plan import run_coder, run_coder_async
 from github_agents.planner_agent.agent import Plan, run_planner, run_planner_async
 from github_agents.reviewer_agent.agent import (
     ReviewDecisionWithMeta,
