@@ -85,7 +85,7 @@ Start with: `docker-compose up -d` or `./scripts/run_watcher.sh`
 All agents run in GitHub Actions:
 
 - Planner runs on issue creation
-- Coder runs automatically after plan or via `/code` command
+- Coder runs automatically after plan
 - Reviewer runs on PR creation/update and after CI checks complete
 
 No local setup needed - just configure secrets and create issues.
@@ -107,9 +107,8 @@ You can use the SDLC agents on any repository without copying the agent code:
    - `LLM_API_TOKEN`: Your LLM API key
 
 3. **Optional variables** (`Settings > Variables > Actions`):
-   - `LLM_PROVIDER`: `openai`, `openrouter`, or `yandex`
    - `LLM_API_URL`: API endpoint URL
-   - `OPENAI_MODEL`: Model name
+   - `LLM_MODEL`: Model name
 
 4. **Create an issue** - the agents will run automatically!
 
@@ -121,8 +120,6 @@ You can use the SDLC agents on any repository without copying the agent code:
 
 Triggers:
 - **New issue created**: Runs Planner, then automatically runs Coder
-- **`/plan` comment**: Re-runs Planner
-- **`/code` comment**: Manually triggers Coder
 
 ### PR Workflow (`.github/workflows/pr.yml`)
 
@@ -154,9 +151,8 @@ Configure in `Settings > Secrets and variables > Actions > Variables`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | `openai` or `yandex` | `openai` |
-| `LLM_API_URL` | API endpoint URL | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | Model name | `gpt-4o-mini` |
+| `LLM_API_URL` | API endpoint URL | `https://openrouter.ai/api/v1` |
+| `LLM_MODEL` | Model name | `gpt-4o-mini` |
 
 ### Environment Variables (Local/Docker)
 
@@ -164,20 +160,12 @@ Configure in `Settings > Secrets and variables > Actions > Variables`:
 |----------|-------------|---------|
 | `GH_TOKEN` | GitHub API token (with repo access) | Required |
 | `GH_REPOSITORY` | Repository in `owner/repo` format | Required |
-| `LLM_PROVIDER` | LLM provider (`openai` or `yandex`) | `openai` |
 | `LLM_API_TOKEN` | LLM API token | Required |
-| `LLM_API_URL` | LLM API endpoint | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | Model to use | `gpt-4o-mini` |
+| `LLM_API_URL` | LLM API endpoint | `https://openrouter.ai/api/v1` |
+| `LLM_MODEL` | Model to use | `gpt-4o-mini` |
 | `POLL_SECONDS` | Polling interval for watcher | `15` |
 | `AUTO_CODE_AFTER_PLAN` | Auto-run coder after plan | `true` |
 | `LOG_LEVEL` | Logging level | `INFO` |
-
-## Commands
-
-Use these commands in issue comments:
-
-- `/plan` - Creates or updates the implementation plan
-- `/code` - Implements the plan and creates a PR
 
 ## Iteration Limits
 

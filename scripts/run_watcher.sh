@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified watcher script - handles all agent events
-# Events: new issues (auto-plan), /plan commands, /code commands, PR updates (auto-review)
+# Events: new issues (auto-plan), PR updates (auto-review)
 
 set -e
 cd "$(dirname "$0")/.."

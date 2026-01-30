@@ -46,7 +46,6 @@ jobs:
           GH_REPOSITORY: ${{ inputs.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
-          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
-          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://api.openai.com/v1' }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
         run: python -m agents.reviewer_agent.runner

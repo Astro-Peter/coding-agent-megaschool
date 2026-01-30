@@ -2,8 +2,6 @@
 
 Events handled:
 - New issues: Auto-run planner
-- Issue comments with /plan: Run planner
-- Issue comments with /code: Run coder
 - New plans: Auto-trigger coder (configurable via AUTO_CODE_AFTER_PLAN)
 - PR updates: Run reviewer
 - Reviewer feedback: Auto-trigger coder for fixes
@@ -21,14 +19,14 @@ import json
 import logging
 import os
 import re
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from agents.common.env import load_dotenv
+from dotenv import load_dotenv
+
+from agents.common.config import load_config
 from agents.common.github_client import GitHubClient
-from agents.common.openai_client import build_client
 from agents.orchestrator import Orchestrator
 from agents.planner_agent.cli import PLAN_MARKER
 from agents.reviewer_agent.runner import REVIEWER_FEEDBACK_MARKER
@@ -36,17 +34,6 @@ from agents.reviewer_agent.runner import REVIEWER_FEEDBACK_MARKER
 
 STATE_PATH = Path(".watcher_state.json")
 logger = logging.getLogger(__name__)
-
-# Environment variable to control auto-coding after planning
-AUTO_CODE_AFTER_PLAN = os.getenv("AUTO_CODE_AFTER_PLAN", "true").strip().lower() == "true"
-
-
-def _require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        print(f"Missing required env var: {name}")
-        sys.exit(1)
-    return value
 
 
 def _load_state() -> dict:
@@ -96,46 +83,6 @@ def _check_new_issues(
 
     if last_seen:
         state["last_issue_created_at"] = last_seen.isoformat()
-
-
-def _check_issue_commands(
-    client: GitHubClient,
-    orchestrator: Orchestrator,
-    state: dict,
-) -> None:
-    """Check for /plan and /code commands in issue comments."""
-    last_seen_comments: dict[str, int] = state.get("last_seen_comments", {})
-
-    issues = client.list_issues(state="open")
-    for issue in issues:
-        if issue.is_pull_request:
-            continue
-
-        issue_key = str(issue.number)
-        last_seen_id = last_seen_comments.get(issue_key, 0)
-
-        comments = client.list_issue_comments(issue.number)
-        comments_sorted = sorted(comments, key=lambda c: c.created_at)
-
-        for comment in comments_sorted:
-            if comment.id <= last_seen_id:
-                continue
-            last_seen_id = comment.id
-
-            if _should_skip_author(comment.user_login):
-                continue
-
-            body = comment.body or ""
-            if "/plan" in body:
-                print(f"Detected /plan command in issue #{issue.number}, comment {comment.id}")
-                orchestrator.plan(issue_number=issue.number, command=body)
-            if "/code" in body:
-                print(f"Detected /code command in issue #{issue.number}, comment {comment.id}")
-                orchestrator.code(issue_number=issue.number)
-
-        last_seen_comments[issue_key] = last_seen_id
-
-    state["last_seen_comments"] = last_seen_comments
 
 
 def _check_pr_updates(
@@ -256,9 +203,11 @@ def _check_new_plans(
     client: GitHubClient,
     orchestrator: Orchestrator,
     state: dict,
+    *,
+    enabled: bool = True,
 ) -> None:
     """Check for new planner comments and auto-trigger coder."""
-    if not AUTO_CODE_AFTER_PLAN:
+    if not enabled:
         return
     
     last_seen_plans: dict[str, int] = state.get("last_seen_plans", {})
@@ -298,47 +247,32 @@ def _check_new_plans(
 
 
 def main() -> int:
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
     load_dotenv()
-
-    token = _require_env("GH_TOKEN")
-    repo = _require_env("GH_REPOSITORY")
-    _require_env("LLM_API_TOKEN")
-    _require_env("LLM_API_URL")
-
-    provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-    llm_token = os.getenv("LLM_API_TOKEN")
-    llm_url = os.getenv("LLM_API_URL")
-    llm_verify_ssl = os.getenv("LLM_VERIFY_SSL", "true").strip().lower() != "false"
+    cfg = load_config()
+    
     poll_seconds = float(os.getenv("POLL_SECONDS", "15"))
-    openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    auto_code = os.getenv("AUTO_CODE_AFTER_PLAN", "true").strip().lower() == "true"
 
-    client = GitHubClient(token=token, repo_full_name=repo)
-    openai_client = build_client(
-        provider=provider,
-        api_token=llm_token,
-        api_url=llm_url,
-        verify_ssl=llm_verify_ssl,
-    )
     orchestrator = Orchestrator(
-        client=client,
-        openai_client=openai_client,
-        model=openai_model,
+        client=cfg.gh_client,
+        openai_client=cfg.llm_client,
+        model=cfg.model,
     )
 
     state = _load_state()
+    client = cfg.gh_client
 
+    repo = os.getenv("GH_REPOSITORY", "")
     print(f"Watching repository {repo} for events (polling every {poll_seconds}s)...")
-    events = "new issues, /plan commands, /code commands, PR updates, reviewer feedback"
-    if AUTO_CODE_AFTER_PLAN:
+    events = "new issues, PR updates, reviewer feedback"
+    if auto_code:
         events += ", auto-code after plan"
     print(f"Events: {events}")
 
     while True:
         try:
             _check_new_issues(client, orchestrator, state)
-            _check_issue_commands(client, orchestrator, state)
-            _check_new_plans(client, orchestrator, state)
+            _check_new_plans(client, orchestrator, state, enabled=auto_code)
             _check_pr_updates(client, orchestrator, state)
             _check_reviewer_feedback(client, orchestrator, state)
             _save_state(state)

@@ -1,0 +1,140 @@
+# Copy this file to .github/workflows/sdlc-reviewer.yml in your repository
+# This workflow runs the reviewer AFTER all other CI checks complete
+# If changes are requested, it automatically triggers the coder to fix them
+#
+# Required secrets:
+#   - GH_TOKEN: GitHub Personal Access Token with repo scope
+#   - LLM_API_TOKEN: Your LLM API key
+
+name: SDLC Reviewer
+
+on:
+  # Trigger when check suites complete (after CI finishes)
+  check_suite:
+    types: [completed]
+  # Also allow manual trigger via /review comment
+  issue_comment:
+    types: [created]
+
+jobs:
+  review_after_checks:
+    name: Review (after CI)
+    # Only run when a check suite completes for a PR
+    if: >
+      github.event_name == 'check_suite' && 
+      github.event.check_suite.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.review.outputs.status }}
+      issue_number: ${{ steps.issue.outputs.number }}
+    steps:
+      - name: Get PR number
+        id: pr
+        run: |
+          echo "number=${{ github.event.check_suite.pull_requests[0].number }}" >> $GITHUB_OUTPUT
+
+      - name: Wait for all checks to settle
+        run: sleep 10
+
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/coding-agent-megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Run Reviewer Agent
+        id: review
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+        run: python -m agents.reviewer_agent.runner
+
+      - name: Get linked issue number
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Get PR body and extract issue number
+          ISSUE_NUM=$(gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --json body --jq '.body' | grep -oP '#\K\d+' | head -1)
+          echo "number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+
+  # Trigger coder to fix issues if review requested changes
+  fix_after_review:
+    name: Fix Issues (auto)
+    needs: review_after_checks
+    if: needs.review_after_checks.outputs.status == 'CHANGES_REQUESTED' && needs.review_after_checks.outputs.issue_number != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/coding-agent-megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Run Coder Agent to fix issues
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.review_after_checks.outputs.issue_number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+        run: python -m agents.coder_agent.runner
+
+  review_manual:
+    name: Review (manual)
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR number from issue
+        id: pr
+        run: |
+          # Issue comments on PRs have the PR number as issue number
+          echo "number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/coding-agent-megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Run Reviewer Agent
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+        run: python -m agents.reviewer_agent.runner
