@@ -25,7 +25,7 @@ on:
       pr_number:
         description: 'PR number to fix issues for'
         required: true
-        type: number
+        type: string
 
 jobs:
   # Get PR info and validate trigger

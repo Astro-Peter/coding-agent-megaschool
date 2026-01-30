@@ -6,7 +6,7 @@ on:
       pr_number:
         description: 'PR number to fix issues for'
         required: true
-        type: number
+        type: string
       repository:
         description: 'Target repository (owner/repo)'
         required: false
