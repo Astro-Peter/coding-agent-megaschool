@@ -394,7 +394,12 @@ async def run_coder_async(*, context: AgentContext) -> None:
     context.max_iterations = MAX_DEV_ITERATIONS
 
     # Check if there's an existing branch to update
-    existing_branch = _find_existing_branch(client, issue_number)
+    if is_ci_fix_mode and context.pr_number:
+        pr_info = client.get_pull_request(context.pr_number)
+        existing_branch = pr_info.head_ref
+        logger.info("CI fix mode: using existing PR branch %s", existing_branch)
+    else:
+        existing_branch = _find_existing_branch(client, issue_number)
     is_update = existing_branch is not None
     
     # Create temporary directory for clone
@@ -429,6 +434,15 @@ async def run_coder_async(*, context: AgentContext) -> None:
         if is_update and existing_branch:
             branch_name = existing_branch
             if not _git_checkout_existing_branch(clone_path, branch_name):
+                # In CI fix mode, don't fall back to creating a new branch
+                if is_ci_fix_mode:
+                    client.comment_issue(
+                        issue.number,
+                        f"🧩 **Coder Agent failed to checkout existing branch `{branch_name}`.**\n\n"
+                        "Cannot proceed with CI fix mode without the existing PR branch.",
+                    )
+                    return
+                # Normal mode: fall back to creating a new branch
                 random_suffix = secrets.token_hex(4)
                 branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
                 if not _git_create_branch(clone_path, branch_name):
