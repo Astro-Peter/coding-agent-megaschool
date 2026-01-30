@@ -9,6 +9,49 @@ from agents import RunContextWrapper, function_tool
 from github_agents.common.context import AgentContext
 
 
+# Directories and files to ignore when listing
+IGNORED_NAMES = {
+    # Version control
+    ".git",
+    ".svn",
+    ".hg",
+    # Dependencies
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    ".nox",
+    # Build artifacts
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    "target",
+    # IDE/Editor
+    ".idea",
+    ".vscode",
+    # Misc
+    ".eggs",
+    "*.egg-info",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "coverage",
+    ".coverage",
+    "htmlcov",
+}
+
+
+def _should_ignore(name: str) -> bool:
+    """Check if a file/directory should be ignored."""
+    if name.startswith("."):
+        return True
+    if name in IGNORED_NAMES:
+        return True
+    return False
+
+
 # --- File System Tools ---
 
 @function_tool
@@ -23,6 +66,9 @@ def get_workdir(ctx: RunContextWrapper[AgentContext]) -> str:
 @function_tool
 def list_dir(ctx: RunContextWrapper[AgentContext], path: str = ".") -> dict[str, Any]:
     """List files and folders under a directory.
+    
+    Automatically filters out hidden files, node_modules, __pycache__, 
+    .git, and other common noise.
     
     Args:
         path: Relative path to list. Defaults to current directory.
@@ -44,6 +90,8 @@ def list_dir(ctx: RunContextWrapper[AgentContext], path: str = ".") -> dict[str,
     
     entries = []
     for item in sorted(target.iterdir(), key=lambda p: p.name.lower()):
+        if _should_ignore(item.name):
+            continue
         entries.append({
             "name": item.name,
             "path": str(item.relative_to(workspace)),
