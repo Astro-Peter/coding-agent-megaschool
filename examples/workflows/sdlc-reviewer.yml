@@ -33,8 +33,9 @@ jobs:
         run: |
           echo "Waiting for CI checks to complete..."
           # Wait up to 10 minutes for checks, polling every 30 seconds
+          # Exclude this workflow ("SDLC Reviewer") from the check
           for i in {1..20}; do
-            STATUS=$(gh pr checks ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json state --jq 'map(.state) | if length == 0 then "none" elif all(. == "SUCCESS" or . == "SKIPPED") then "success" elif any(. == "PENDING" or . == "QUEUED" or . == "IN_PROGRESS") then "pending" else "failure" end' 2>/dev/null || echo "none")
+            STATUS=$(gh pr checks ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json name,state --jq '[.[] | select(.name != "Review (after CI)" and .name != "Fix Issues (auto)")] | map(.state) | if length == 0 then "none" elif all(. == "SUCCESS" or . == "SKIPPED") then "success" elif any(. == "PENDING" or . == "QUEUED" or . == "IN_PROGRESS") then "pending" else "failure" end' 2>/dev/null || echo "none")
             echo "Check status: $STATUS"
             if [ "$STATUS" = "success" ] || [ "$STATUS" = "failure" ] || [ "$STATUS" = "none" ]; then
               echo "CI checks finished with status: $STATUS"
