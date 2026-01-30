@@ -156,7 +156,7 @@ def append_file(ctx: RunContextWrapper[AgentContext], path: str, content: str) -
     
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as handle:
-        handle.write("\n" + content)
+        handle.write(content)
     
     return {"ok": True, "message": "Content appended", "path": str(target.relative_to(workspace))}
 

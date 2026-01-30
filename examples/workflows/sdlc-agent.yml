@@ -20,7 +20,14 @@ jobs:
   # Plan on new issue with 'agent' label, or when 'agent' label is added
   plan:
     name: Plan
-    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'agent')
+    # Only trigger when:
+    # 1. Issue is opened with 'agent' label already attached, OR
+    # 2. The 'agent' label specifically is being added
+    if: >
+      github.event_name == 'issues' && (
+        (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'agent')) ||
+        (github.event.action == 'labeled' && github.event.label.name == 'agent')
+      )
     uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-planner.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
