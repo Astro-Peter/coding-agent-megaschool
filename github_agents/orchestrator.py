@@ -1,13 +1,14 @@
 """Orchestrator for coordinating agents using OpenAI Agents SDK."""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
+from github_agents.coder_agent.run_from_plan import run_coder, run_coder_async
 from github_agents.common.context import AgentContext
 from github_agents.common.github_client import GitHubClient
 from github_agents.common.sdk_config import configure_sdk
-from github_agents.coder_agent.run_from_plan import run_coder, run_coder_async
 from github_agents.planner_agent.agent import Plan, run_planner, run_planner_async
 from github_agents.reviewer_agent.agent import (
     ReviewDecisionWithMeta,
@@ -18,23 +19,23 @@ from github_agents.reviewer_agent.agent import (
 
 class Orchestrator:
     """Orchestrates the planning, coding, and reviewing agents.
-    
+
     Uses the OpenAI Agents SDK for agent execution with shared context.
     """
-    
+
     def __init__(self, *, client: GitHubClient, model: str) -> None:
         """Initialize the orchestrator.
-        
+
         Args:
             client: GitHub client for API operations.
             model: Model name to use for LLM calls.
         """
         self._client = client
         self._model = model
-        
+
         # Configure the SDK (should be called once at startup)
         configure_sdk()
-    
+
     def _create_context(
         self,
         *,
@@ -52,16 +53,16 @@ class Orchestrator:
             workspace=workspace,
             reviewer_feedback=reviewer_feedback or [],
         )
-    
+
     # --- Synchronous API ---
-    
+
     def plan(self, *, issue_number: int, command: str | None = None) -> Plan:
         """Run the planner agent to create a plan for an issue.
-        
+
         Args:
             issue_number: The GitHub issue number to plan for.
             command: Optional command that triggered the planning.
-        
+
         Returns:
             The generated Plan.
         """
@@ -75,7 +76,7 @@ class Orchestrator:
         reviewer_feedback: list[str] | None = None,
     ) -> None:
         """Run the coder agent to implement changes for an issue.
-        
+
         Args:
             issue_number: The GitHub issue number to implement.
             reviewer_feedback: Optional feedback from the reviewer to address.
@@ -88,18 +89,18 @@ class Orchestrator:
 
     def review(self, *, pr_number: int) -> ReviewDecisionWithMeta | None:
         """Run the reviewer agent to review a pull request.
-        
+
         Args:
             pr_number: The pull request number to review.
-        
+
         Returns:
             The review decision with metadata.
         """
         context = self._create_context(pr_number=pr_number)
         return run_reviewer(context=context)
-    
+
     # --- Async API ---
-    
+
     async def plan_async(self, *, issue_number: int, command: str | None = None) -> Plan:
         """Async version of plan()."""
         context = self._create_context(issue_number=issue_number)
@@ -122,25 +123,25 @@ class Orchestrator:
         """Async version of review()."""
         context = self._create_context(pr_number=pr_number)
         return await run_reviewer_async(context=context)
-    
+
     # --- Full SDLC Workflow ---
-    
+
     async def run_sdlc_async(self, *, issue_number: int) -> None:
         """Run the full SDLC workflow: plan -> code -> review.
-        
+
         This runs the complete software development lifecycle for an issue.
-        
+
         Args:
             issue_number: The GitHub issue number to process.
         """
         # Step 1: Plan
         await self.plan_async(issue_number=issue_number)
-        
+
         # Step 2: Code
         await self.code_async(issue_number=issue_number)
-        
+
         # Note: Review is triggered separately by the PR creation
-    
+
     def run_sdlc(self, *, issue_number: int) -> None:
         """Synchronous version of run_sdlc_async()."""
         asyncio.run(self.run_sdlc_async(issue_number=issue_number))

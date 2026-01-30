@@ -1,4 +1,5 @@
 """Shared context for all agents using the OpenAI Agents SDK."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 @dataclass
 class AgentContext:
     """Shared context passed to all agents via dependency injection.
-    
+
     This context provides access to:
     - GitHub client for API operations
     - Model name for LLM calls
@@ -21,6 +22,7 @@ class AgentContext:
     - Code index for searching
     - Issue/PR numbers for tracking
     """
+
     gh_client: GitHubClient
     model: str
     workspace: Path | None = None

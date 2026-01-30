@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-
 _EXCLUDED_DIRS = {
     ".git",
     ".venv",
@@ -121,7 +120,7 @@ def _is_text_file(path: str) -> bool:
 
 def _read_text(path: str) -> str:
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
             return handle.read()
     except OSError:
         return ""
@@ -134,8 +133,7 @@ def _build_snippet(content: str, query_lower: str) -> str:
             start = max(0, index - 2)
             end = min(len(lines), index + 3)
             return "\n".join(
-                f"{line_index + 1}: {lines[line_index]}"
-                for line_index in range(start, end)
+                f"{line_index + 1}: {lines[line_index]}" for line_index in range(start, end)
             )
     preview = content[:200].replace("\n", " ")
     return preview

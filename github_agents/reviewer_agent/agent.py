@@ -1,4 +1,5 @@
 """Reviewer Agent using OpenAI Agents SDK."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,9 +10,8 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
 from agents import Agent, Runner
+from pydantic import BaseModel, Field
 
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
@@ -32,22 +32,22 @@ MAX_ITERATIONS = 5
 
 class ReviewDecision(BaseModel):
     """Structured output from the reviewer agent."""
+
     status: Literal["APPROVED", "CHANGES_REQUESTED"] = Field(
         description="The review decision: APPROVED or CHANGES_REQUESTED"
     )
     summary: str = Field(description="Brief overall assessment of the PR")
     issues: list[str] = Field(
-        default_factory=list,
-        description="List of specific issues found, empty if approved"
+        default_factory=list, description="List of specific issues found, empty if approved"
     )
     suggestions: list[str] = Field(
-        default_factory=list,
-        description="Optional improvements that don't block approval"
+        default_factory=list, description="Optional improvements that don't block approval"
     )
 
 
 class ReviewDecisionWithMeta(BaseModel):
     """Review decision with iteration metadata."""
+
     status: str
     summary: str
     issues: list[str]
@@ -57,6 +57,7 @@ class ReviewDecisionWithMeta(BaseModel):
 
 
 # --- Helper Functions ---
+
 
 def _extract_issue_number(pr_body: str) -> int | None:
     """Extract linked issue number from PR body."""
@@ -88,19 +89,19 @@ def _format_diff_summary(files: list, max_patch_size: int = 5000) -> str:
     """Format the diff for the review prompt, truncating if too large."""
     if not files:
         return "No files changed."
-    
+
     lines = [f"Changed files ({len(files)} total):"]
     total_additions = 0
     total_deletions = 0
-    
+
     for f in files:
         total_additions += f.additions
         total_deletions += f.deletions
         lines.append(f"  - {f.filename} (+{f.additions}/-{f.deletions}) [{f.status}]")
-    
+
     lines.append(f"\nTotal: +{total_additions}/-{total_deletions}")
     lines.append("\n--- Detailed Changes ---\n")
-    
+
     current_size = 0
     for i, f in enumerate(files):
         if f.patch:
@@ -110,7 +111,7 @@ def _format_diff_summary(files: list, max_patch_size: int = 5000) -> str:
                 break
             lines.append(patch_header)
             current_size += len(patch_header)
-    
+
     return "\n".join(lines)
 
 
@@ -125,26 +126,28 @@ def _format_review_body(decision: ReviewDecisionWithMeta) -> str:
         decision.summary,
         "",
     ]
-    
+
     if decision.issues:
-        lines.extend([
-            "### Issues",
-            *[f"- {issue}" for issue in decision.issues],
-            "",
-        ])
-    
+        lines.extend(
+            [
+                "### Issues",
+                *[f"- {issue}" for issue in decision.issues],
+                "",
+            ]
+        )
+
     if decision.status == "APPROVED":
         lines.append("This PR is ready for merge.")
     else:
         lines.append("Please address the issues above before this PR can be approved.")
-    
+
     return "\n".join(lines)
 
 
 def _format_review_comment(decision: ReviewDecisionWithMeta, pr_url: str, branch: str) -> str:
     """Format the review as a GitHub comment with machine-readable section."""
     status_emoji = "✅" if decision.status == "APPROVED" else "🔄"
-    
+
     lines = [
         REVIEWER_FEEDBACK_MARKER,
         f"## {status_emoji} AI Reviewer Agent Report",
@@ -158,27 +161,33 @@ def _format_review_comment(decision: ReviewDecisionWithMeta, pr_url: str, branch
         decision.summary,
         "",
     ]
-    
+
     if decision.issues:
-        lines.extend([
-            "### Issues Found",
-            *[f"- {issue}" for issue in decision.issues],
-            "",
-        ])
-    
+        lines.extend(
+            [
+                "### Issues Found",
+                *[f"- {issue}" for issue in decision.issues],
+                "",
+            ]
+        )
+
     if decision.status == "CHANGES_REQUESTED":
-        lines.extend([
-            "---",
-            "**Next Steps:** The Coder Agent will automatically attempt to fix these issues.",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "**Next Steps:** The Coder Agent will automatically attempt to fix these issues.",
+                "",
+            ]
+        )
     else:
-        lines.extend([
-            "---",
-            "**This PR is ready for human review and merge.**",
-            "",
-        ])
-    
+        lines.extend(
+            [
+                "---",
+                "**This PR is ready for human review and merge.**",
+                "",
+            ]
+        )
+
     # Add machine-readable data block
     data_block = {
         "status": decision.status,
@@ -186,17 +195,19 @@ def _format_review_comment(decision: ReviewDecisionWithMeta, pr_url: str, branch
         "max_iterations": decision.max_iterations,
         "issues": decision.issues,
     }
-    lines.extend([
-        "<details>",
-        "<summary>Machine-readable data (for automation)</summary>",
-        "",
-        "```json",
-        json.dumps(data_block, indent=2),
-        "```",
-        "",
-        "</details>",
-    ])
-    
+    lines.extend(
+        [
+            "<details>",
+            "<summary>Machine-readable data (for automation)</summary>",
+            "",
+            "```json",
+            json.dumps(data_block, indent=2),
+            "```",
+            "",
+            "</details>",
+        ]
+    )
+
     return "\n".join(lines)
 
 
@@ -205,9 +216,9 @@ def _write_actions_summary(decision: ReviewDecisionWithMeta, pr_url: str, branch
     summary_file = os.getenv("GITHUB_STEP_SUMMARY")
     if not summary_file:
         return
-    
+
     status_emoji = "✅" if decision.status == "APPROVED" else "🔄"
-    
+
     lines = [
         f"# {status_emoji} AI Reviewer Agent Report",
         "",
@@ -223,20 +234,24 @@ def _write_actions_summary(decision: ReviewDecisionWithMeta, pr_url: str, branch
         decision.summary,
         "",
     ]
-    
+
     if decision.issues:
-        lines.extend([
-            "## Issues Found",
-            "",
-            *[f"- {issue}" for issue in decision.issues],
-            "",
-        ])
-    
+        lines.extend(
+            [
+                "## Issues Found",
+                "",
+                *[f"- {issue}" for issue in decision.issues],
+                "",
+            ]
+        )
+
     if decision.status == "APPROVED":
         lines.append("**This PR is ready for human review and merge.**")
     else:
-        lines.append("**Next Steps:** The Coder Agent will automatically attempt to fix these issues.")
-    
+        lines.append(
+            "**Next Steps:** The Coder Agent will automatically attempt to fix these issues."
+        )
+
     try:
         with open(summary_file, "a") as f:
             f.write("\n".join(lines) + "\n")
@@ -258,6 +273,7 @@ def _write_status_output(status: str) -> None:
 
 # --- Agent Definition ---
 
+
 def _build_reviewer_agent(
     pr_title: str,
     pr_body: str,
@@ -277,7 +293,7 @@ def _build_reviewer_agent(
         iteration=iteration,
         max_iterations=max_iterations,
     )
-    
+
     return Agent[AgentContext](
         name="Reviewer",
         model=get_model_name(),
@@ -288,6 +304,7 @@ def _build_reviewer_agent(
 
 
 # --- Agent Execution ---
+
 
 async def run_reviewer_agent_async(
     pr_title: str,
@@ -305,7 +322,7 @@ async def run_reviewer_agent_async(
         iteration=context.iteration,
         max_iterations=context.max_iterations,
     )
-    
+
     try:
         result = await Runner.run(
             agent,
@@ -328,15 +345,15 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
     """Main entry point for the reviewer agent (async version)."""
     if context.pr_number is None:
         raise ValueError("pr_number is required in context")
-    
+
     client = context.gh_client
     pr_number = context.pr_number
-    
+
     logger.info("Starting review for PR #%d", pr_number)
-    
+
     # Get PR details
     pr = client.get_pull_request(pr_number)
-    
+
     # Get changed files and diff
     try:
         files = client.get_pull_request_files(pr_number)
@@ -344,12 +361,12 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
     except Exception as e:
         logger.warning("Failed to get PR diff: %s", e)
         diff_summary = "Could not fetch diff."
-    
+
     # Extract linked issue
     issue_number = _extract_issue_number(pr.body)
     issue: IssueData | None = None
     iteration = 1
-    
+
     if issue_number:
         try:
             issue = client.get_issue(issue_number)
@@ -357,23 +374,23 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
             logger.info("Linked to issue #%d, iteration %d", issue_number, iteration)
         except Exception as e:
             logger.warning("Failed to get linked issue: %s", e)
-    
+
     # Update context
     context.iteration = iteration
     context.max_iterations = MAX_ITERATIONS
-    
+
     # Build code index if workspace is available
     workspace_root = context.workspace or Path(os.getenv("GITHUB_WORKSPACE", os.getcwd()))
     index = CodeIndex(str(workspace_root))
     index.build()
     context.workspace = workspace_root
     context.index = index
-    
+
     # Check if we should force approval
     force_approve = iteration >= MAX_ITERATIONS
     if force_approve:
         logger.info("Max iterations reached, will force approval")
-    
+
     # Run the reviewer agent
     decision = await run_reviewer_agent_async(
         pr_title=pr.title,
@@ -382,16 +399,17 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         issue=issue,
         context=context,
     )
-    
+
     # Force approval if max iterations reached
     if force_approve and decision.status == "CHANGES_REQUESTED":
         decision = ReviewDecision(
             status="APPROVED",
             summary=f"**Forced approval after {MAX_ITERATIONS} iterations.** Original assessment: {decision.summary}",
-            issues=["This PR exceeded the maximum iteration limit and was auto-approved."] + decision.issues,
+            issues=["This PR exceeded the maximum iteration limit and was auto-approved."]
+            + decision.issues,
             suggestions=decision.suggestions,
         )
-    
+
     # Create decision with metadata
     decision_with_meta = ReviewDecisionWithMeta(
         status=decision.status,
@@ -401,11 +419,11 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         iteration=iteration,
         max_iterations=MAX_ITERATIONS,
     )
-    
+
     # Post the review comment
     comment = _format_review_comment(decision_with_meta, pr.url, pr.head_ref)
     client.comment_pull_request(pr.number, comment)
-    
+
     # Post a proper PR review
     review_body = _format_review_body(decision_with_meta)
     review_event = "APPROVE" if decision.status == "APPROVED" else "REQUEST_CHANGES"
@@ -414,11 +432,11 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         logger.info("Posted PR review with event: %s", review_event)
     except Exception as e:
         logger.warning("Failed to post PR review: %s", e)
-    
+
     # Write to GitHub Actions
     _write_actions_summary(decision_with_meta, pr.url, pr.head_ref)
     _write_status_output(decision.status)
-    
+
     logger.info("Review completed: %s", decision.status)
     return decision_with_meta
 
@@ -432,17 +450,17 @@ def main() -> int:
     """CLI entry point for the reviewer agent."""
     cfg = load_config()
     pr_number = get_pr_number()
-    
+
     # Configure the SDK for OpenRouter
     configure_sdk()
-    
+
     # Create context
     context = AgentContext(
         gh_client=cfg.gh_client,
         model=cfg.model,
         pr_number=pr_number,
     )
-    
+
     run_reviewer(context=context)
     return 0
 

@@ -3,6 +3,7 @@
 This module provides consistent formatting for GitHub issue/PR comments
 posted by the coder agent.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -23,7 +24,7 @@ def format_agent_message(
     extra_lines: list[str] | None = None,
 ) -> str:
     """Format a standard coder agent message with consistent structure.
-    
+
     Args:
         header: The main message header (without emoji prefix).
         issue_url: Optional issue URL to include.
@@ -33,12 +34,12 @@ def format_agent_message(
         summary: Optional summary text to include in a section.
         summary_header: Header for the summary section (default: "Summary").
         extra_lines: Optional additional lines to append.
-    
+
     Returns:
         Formatted markdown message string.
     """
     lines = [f"🧩 **{header}**", ""]
-    
+
     # Add metadata bullets
     has_metadata = False
     if issue_url:
@@ -53,19 +54,19 @@ def format_agent_message(
     if iteration:
         lines.append(f"- Iterations: {iteration[0]}/{iteration[1]}")
         has_metadata = True
-    
+
     # Add summary section
     if summary:
         if has_metadata:
             lines.append("")
         lines.extend([f"### {summary_header}", summary])
-    
+
     # Add extra lines if provided
     if extra_lines:
         if has_metadata or summary:
             lines.append("")
         lines.extend(extra_lines)
-    
+
     return "\n".join(lines)
 
 
@@ -76,7 +77,7 @@ def comment_agent_status(
     **kwargs,
 ) -> None:
     """Post a formatted agent status message to an issue.
-    
+
     Args:
         client: The GitHub client instance.
         issue_number: The issue number to comment on.
@@ -134,7 +135,7 @@ def comment_starting_implementation(
     else:
         header = f"Coder Agent starting implementation{iteration_msg}..."
         extra = ["Cloning repository..."]
-    
+
     comment_agent_status(client, issue_number, header, extra_lines=extra)
 
 
@@ -152,7 +153,7 @@ def comment_clone_failed(
     else:
         header = "Coder Agent failed to clone repository."
         extra = ["Please check the logs."]
-    
+
     comment_agent_status(client, issue_number, header, extra_lines=extra)
 
 

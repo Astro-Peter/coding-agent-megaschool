@@ -102,15 +102,15 @@ def build_coder_instructions(
     is_ci_fix_mode: bool = False,
 ) -> str:
     """Build the instructions for the coder agent."""
-    steps_text = "\n".join(f"  {i+1}. {step}" for i, step in enumerate(steps))
+    steps_text = "\n".join(f"  {i + 1}. {step}" for i, step in enumerate(steps))
 
     feedback_section = ""
-    
+
     # CI feedback takes priority when in CI fix mode
     if ci_feedback and is_ci_fix_mode:
         ci_items = "\n".join(f"  - {item}" for item in ci_feedback)
         feedback_section = CI_FEEDBACK_SECTION_TEMPLATE.format(ci_items=ci_items)
-    
+
     if reviewer_feedback:
         feedback_items = "\n".join(f"  - {item}" for item in reviewer_feedback)
         feedback_section += REVIEWER_FEEDBACK_SECTION_TEMPLATE.format(
@@ -151,7 +151,7 @@ def build_coder_pr_comments_instructions(
     is_ci_fix_mode: bool = False,
 ) -> str:
     """Build instructions for the coder agent when working from PR comment history.
-    
+
     Args:
         pr_title: The PR title.
         pr_body: The PR body/description.
@@ -162,27 +162,27 @@ def build_coder_pr_comments_instructions(
         reviewer_feedback: Optional list of reviewer feedback items.
         ci_feedback: Optional list of CI feedback items.
         is_ci_fix_mode: Whether we're in CI fix mode.
-    
+
     Returns:
         Formatted instruction string for the coder agent.
     """
     # Format comment history
     comment_lines = []
     for comment in comment_history:
-        author = comment.get('author', 'Unknown')
-        body = comment.get('body', '')
-        created_at = comment.get('created_at', '')
+        author = comment.get("author", "Unknown")
+        body = comment.get("body", "")
+        created_at = comment.get("created_at", "")
         comment_lines.append(f"**{author}** ({created_at}):\n{body}\n")
-    
+
     comment_history_text = "\n---\n".join(comment_lines) if comment_lines else "No comments yet."
 
     feedback_section = ""
-    
+
     # CI feedback takes priority when in CI fix mode
     if ci_feedback and is_ci_fix_mode:
         ci_items = "\n".join(f"  - {item}" for item in ci_feedback)
         feedback_section = CI_FEEDBACK_SECTION_TEMPLATE.format(ci_items=ci_items)
-    
+
     if reviewer_feedback:
         feedback_items = "\n".join(f"  - {item}" for item in reviewer_feedback)
         feedback_section += REVIEWER_FEEDBACK_SECTION_TEMPLATE.format(

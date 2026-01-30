@@ -1,6 +1,6 @@
 """Prompts and instructions for the CI Fixer Agent."""
 
-CI_ANALYSIS_PROMPT_TEMPLATE = """You are an expert CI/CD debugging assistant. Your task is to analyze CI check failures 
+CI_ANALYSIS_PROMPT_TEMPLATE = """You are an expert CI/CD debugging assistant. Your task is to analyze CI check failures
 and provide actionable suggestions for how to fix them.
 
 ## Pull Request Information
@@ -37,7 +37,7 @@ Analyze ALL the CI failure information provided above and produce a structured a
 ## Focus Areas
 
 - Syntax errors and typos
-- Import/dependency issues  
+- Import/dependency issues
 - Type errors (for typed languages)
 - Test failures and assertions
 - Linting violations
@@ -46,7 +46,9 @@ Analyze ALL the CI failure information provided above and produce a structured a
 Be specific in your suggestions. Include file paths, line numbers when available, and concrete fixes.
 """
 
-CI_ANALYZER_SYSTEM_INSTRUCTIONS = "Analyze CI failures and provide structured suggestions for fixes."
+CI_ANALYZER_SYSTEM_INSTRUCTIONS = (
+    "Analyze CI failures and provide structured suggestions for fixes."
+)
 
 
 def build_ci_analysis_prompt(

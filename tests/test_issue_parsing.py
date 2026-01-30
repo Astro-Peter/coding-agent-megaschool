@@ -1,5 +1,7 @@
 """Tests for planner agent plan output."""
+
 import pytest
+from pydantic import ValidationError
 
 from github_agents.planner_agent.agent import Plan
 
@@ -13,7 +15,7 @@ def test_plan_model_structure():
 
 def test_plan_model_validation():
     """Test Plan model validates required fields."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Plan(steps=["A", "B"])  # Missing summary
 
 

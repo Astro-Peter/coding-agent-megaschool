@@ -64,7 +64,7 @@ def build_reviewer_instructions(
             issue_title=issue_title,
             issue_body=issue_body or "",
         )
-    
+
     return REVIEWER_INSTRUCTIONS_TEMPLATE.format(
         pr_title=pr_title,
         pr_body=pr_body,

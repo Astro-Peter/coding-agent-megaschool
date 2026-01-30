@@ -13,6 +13,7 @@ This creates a full SDLC automation loop:
 4. Reviewer requests changes -> Coder fixes issues
 5. Repeat until approved or max iterations reached
 """
+
 from __future__ import annotations
 
 import json
@@ -30,7 +31,6 @@ from github_agents.common.github_client import GitHubClient
 from github_agents.orchestrator import Orchestrator
 from github_agents.planner_agent.agent import PLAN_MARKER
 from github_agents.reviewer_agent.agent import REVIEWER_FEEDBACK_MARKER
-
 
 STATE_PATH = Path(".watcher_state.json")
 logger = logging.getLogger(__name__)
@@ -124,12 +124,12 @@ def _parse_reviewer_feedback(comment_body: str) -> dict | None:
     """Parse machine-readable feedback from reviewer comment."""
     if REVIEWER_FEEDBACK_MARKER not in comment_body:
         return None
-    
+
     # Look for the JSON block in the details section
     json_match = re.search(r"```json\s*(\{.*?\})\s*```", comment_body, re.DOTALL)
     if not json_match:
         return None
-    
+
     try:
         return json.loads(json_match.group(1))
     except json.JSONDecodeError:
@@ -175,14 +175,19 @@ def _check_reviewer_feedback(
 
             logger.info(
                 "Found reviewer feedback on PR #%d: status=%s, iteration=%d/%d",
-                pr.number, status, iteration, max_iterations
+                pr.number,
+                status,
+                iteration,
+                max_iterations,
             )
 
             if status == "CHANGES_REQUESTED" and iteration < max_iterations:
                 # Extract linked issue from PR body
                 issue_number = _extract_issue_from_pr_body(pr.body)
                 if issue_number:
-                    print(f"Reviewer requested changes on PR #{pr.number}, triggering coder for issue #{issue_number}")
+                    print(
+                        f"Reviewer requested changes on PR #{pr.number}, triggering coder for issue #{issue_number}"
+                    )
                     # Pass the feedback to the coder
                     orchestrator.code(
                         issue_number=issue_number,
@@ -190,8 +195,7 @@ def _check_reviewer_feedback(
                     )
                 else:
                     logger.warning(
-                        "Could not find linked issue for PR #%d, cannot trigger coder",
-                        pr.number
+                        "Could not find linked issue for PR #%d, cannot trigger coder", pr.number
                     )
 
         last_seen_feedback[pr_key] = last_seen_id
@@ -209,7 +213,7 @@ def _check_new_plans(
     """Check for new planner comments and auto-trigger coder."""
     if not enabled:
         return
-    
+
     last_seen_plans: dict[str, int] = state.get("last_seen_plans", {})
 
     issues = client.list_issues(state="open")
@@ -234,10 +238,7 @@ def _check_new_plans(
                 continue
 
             # This is a planner comment - auto-trigger coder
-            logger.info(
-                "Found new plan for issue #%d, auto-triggering coder",
-                issue.number
-            )
+            logger.info("Found new plan for issue #%d, auto-triggering coder", issue.number)
             print(f"New plan detected for issue #{issue.number}, auto-triggering coder...")
             orchestrator.code(issue_number=issue.number)
 
@@ -249,7 +250,7 @@ def _check_new_plans(
 def main() -> int:
     load_dotenv()
     cfg = load_config()
-    
+
     poll_seconds = float(os.getenv("POLL_SECONDS", "15"))
     auto_code = os.getenv("AUTO_CODE_AFTER_PLAN", "true").strip().lower() == "true"
 

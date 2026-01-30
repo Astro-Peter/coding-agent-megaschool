@@ -6,6 +6,7 @@ For entrypoints, see:
 - run_from_pr_comments.py: PR comments-based entrypoint (commits into existing PR)
 - run_unified.py: Unified entrypoint that can handle both modes
 """
+
 from __future__ import annotations
 
 import json
@@ -18,12 +19,15 @@ from pathlib import Path
 from agents import Agent, Runner
 from agents.agent import StopAtTools
 
+from github_agents.coder_agent.prompts import (
+    build_coder_instructions,
+    build_coder_pr_comments_instructions,
+)
 from github_agents.common.context import AgentContext
 from github_agents.common.github_client import GitHubClient, IssueCommentData, IssueData
 from github_agents.common.sdk_config import get_model_name
 from github_agents.common.tools import get_coder_tools
 from github_agents.planner_agent.agent import PLAN_MARKER
-from github_agents.coder_agent.prompts import build_coder_instructions, build_coder_pr_comments_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,7 @@ CI_FIXER_MARKER = "<!-- ci-fixer-agent-report -->"
 
 
 # --- Plan Extraction ---
+
 
 def _extract_plan(comment: IssueCommentData) -> dict | None:
     """Extract plan JSON from a planner agent comment."""
@@ -66,6 +71,7 @@ def _load_latest_plan(comments: list[IssueCommentData]) -> dict | None:
 
 # --- CI Feedback Extraction ---
 
+
 def _extract_ci_feedback(comment: IssueCommentData) -> dict | None:
     """Extract CI feedback from a CI fixer agent comment."""
     if CI_FIXER_MARKER not in comment.body:
@@ -83,31 +89,31 @@ def _extract_ci_feedback(comment: IssueCommentData) -> dict | None:
 def _extract_ci_suggestions(comment_body: str) -> list[str]:
     """Extract suggested fixes from CI fixer comment body."""
     suggestions = []
-    
+
     # Look for the "Suggested Fixes" section
     if "### Suggested Fixes" in comment_body:
         fixes_section = comment_body.split("### Suggested Fixes")[1]
         # Stop at the next section
         if "###" in fixes_section:
             fixes_section = fixes_section.split("###")[0]
-        
+
         # Extract each fix (lines starting with **)
         for line in fixes_section.split("\n"):
             line = line.strip()
             if line.startswith("**") or line.startswith("- "):
                 suggestions.append(line.lstrip("*- ").strip())
-    
+
     # Also look for root causes
     if "### Root Causes" in comment_body:
         causes_section = comment_body.split("### Root Causes")[1]
         if "###" in causes_section:
             causes_section = causes_section.split("###")[0]
-        
+
         for line in causes_section.split("\n"):
             line = line.strip()
             if line.startswith("- "):
                 suggestions.append(f"Root cause: {line[2:]}")
-    
+
     return suggestions
 
 
@@ -122,6 +128,7 @@ def _load_latest_ci_feedback(comments: list[IssueCommentData]) -> list[str]:
 
 
 # --- Iteration Tracking ---
+
 
 def _get_iteration_count(client: GitHubClient, issue_number: int) -> int:
     """Get current iteration count from issue labels."""
@@ -138,11 +145,11 @@ def _get_iteration_count(client: GitHubClient, issue_number: int) -> int:
 def _update_iteration_count(client: GitHubClient, issue_number: int, new_count: int) -> None:
     """Update the iteration count label on an issue."""
     labels = client.get_issue_labels(issue_number)
-    
+
     for label in labels:
         if label.startswith(ITERATION_LABEL_PREFIX):
             client.remove_issue_label(issue_number, label)
-    
+
     new_label = f"{ITERATION_LABEL_PREFIX}{new_count}"
     client.add_issue_label(issue_number, new_label)
     logger.info("Updated iteration label to %s for issue #%d", new_label, issue_number)
@@ -159,9 +166,10 @@ def _find_existing_branch(client: GitHubClient, issue_number: int) -> str | None
 
 # --- Git Operations ---
 
+
 def _clone_repository(clone_url: str, token: str, dest: Path, *, branch: str | None = None) -> bool:
     """Clone the repository to dest directory.
-    
+
     Args:
         clone_url: The repository clone URL.
         token: GitHub access token.
@@ -178,7 +186,7 @@ def _clone_repository(clone_url: str, token: str, dest: Path, *, branch: str | N
         if branch:
             cmd.extend(["--branch", branch])
         cmd.extend([authed_url, str(dest)])
-        
+
         subprocess.run(
             cmd,
             check=True,
@@ -288,6 +296,7 @@ def _git_push(workdir: Path, branch_name: str) -> bool:
 
 # --- Agent Definition ---
 
+
 def _build_coder_agent(
     issue: IssueData,
     plan: dict,
@@ -297,7 +306,7 @@ def _build_coder_agent(
     instructions = build_coder_instructions(
         issue_title=issue.title,
         issue_body=issue.body,
-        plan_summary=plan.get('summary', 'No summary'),
+        plan_summary=plan.get("summary", "No summary"),
         steps=plan.get("steps", []),
         iteration=context.iteration,
         max_iterations=context.max_iterations,
@@ -305,7 +314,7 @@ def _build_coder_agent(
         ci_feedback=context.ci_feedback,
         is_ci_fix_mode=context.is_ci_fix_mode,
     )
-    
+
     return Agent[AgentContext](
         name="Coder",
         model=get_model_name(),
@@ -334,7 +343,7 @@ def _build_coder_agent_from_pr_comments(
         ci_feedback=context.ci_feedback,
         is_ci_fix_mode=context.is_ci_fix_mode,
     )
-    
+
     return Agent[AgentContext](
         name="Coder",
         model=get_model_name(),
@@ -346,6 +355,7 @@ def _build_coder_agent_from_pr_comments(
 
 # --- Agent Execution ---
 
+
 async def run_coder_agent_async(
     issue: IssueData,
     plan: dict,
@@ -353,7 +363,7 @@ async def run_coder_agent_async(
 ) -> str:
     """Run the coder agent and return the completion summary."""
     agent = _build_coder_agent(issue, plan, context)
-    
+
     try:
         result = await Runner.run(
             agent,
@@ -361,13 +371,13 @@ async def run_coder_agent_async(
             context=context,
             max_turns=MAX_AGENT_ITERATIONS,
         )
-        
+
         # Extract the summary from the mark_complete tool output
         output = str(result.final_output or "")
         if output.startswith("COMPLETE: "):
             return output[10:]
         return output or "Agent completed without explicit summary."
-        
+
     except Exception as exc:
         logger.exception("Coder agent failed: %s", exc)
         return f"Agent execution failed: {exc}"
@@ -388,7 +398,7 @@ async def run_coder_agent_from_pr_comments_async(
         comment_history=comment_history,
         context=context,
     )
-    
+
     try:
         result = await Runner.run(
             agent,
@@ -396,13 +406,13 @@ async def run_coder_agent_from_pr_comments_async(
             context=context,
             max_turns=MAX_AGENT_ITERATIONS,
         )
-        
+
         # Extract the summary from the mark_complete tool output
         output = str(result.final_output or "")
         if output.startswith("COMPLETE: "):
             return output[10:]
         return output or "Agent completed without explicit summary."
-        
+
     except Exception as exc:
         logger.exception("Coder agent failed: %s", exc)
         return f"Agent execution failed: {exc}"

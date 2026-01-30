@@ -1,34 +1,23 @@
 """Plan-based entrypoint for the Coder Agent.
 
-This entrypoint runs the coder agent based on a plan extracted from issue comments.
+This module runs the coder agent based on a plan extracted from issue comments.
 It creates a new branch (or updates an existing one) and creates/updates a PR.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import os
-import secrets
-import shutil
-import tempfile
-from pathlib import Path
-
-from github_agents.common.code_index import CodeIndex
-from github_agents.common.config import get_issue_number, load_config
-from github_agents.common.context import AgentContext
-from github_agents.common.sdk_config import configure_sdk
 
 from github_agents.coder_agent.agent import (
     MAX_DEV_ITERATIONS,
     _clone_repository,
-    _find_existing_branch,
     _get_iteration_count,
     _git_commit,
     _git_create_branch,
     _git_push,
-    _load_latest_ci_feedback,
-    _load_latest_plan,
     _update_iteration_count,
     run_coder_agent_async,
 )
@@ -44,33 +33,49 @@ from github_agents.coder_agent.messages import (
     comment_push_success,
     comment_starting_implementation,
 )
+from github_agents.coder_agent.runner_utils import (
+    determine_branch_for_issue,
+    generate_new_branch_name,
+    get_clone_token,
+    load_plan_from_issue,
+    setup_ci_fix_mode,
+    setup_context_for_workspace,
+    temp_clone_directory,
+)
+from github_agents.common.config import get_issue_number, load_config
+from github_agents.common.context import AgentContext
+from github_agents.common.sdk_config import configure_sdk
 
 logger = logging.getLogger(__name__)
 
 
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
+
+
 async def run_coder_async(*, context: AgentContext) -> None:
-    """Main entry point for the coder agent using a plan from issue comments."""
+    """Run the coder agent based on a plan from issue comments.
+
+    This is the main async entrypoint for plan-based coding.
+    The plan will be loaded from the issue comments automatically.
+
+    Args:
+        context: Agent context with issue_number set.
+    """
     if context.issue_number is None:
-        raise ValueError("issue_number is required in context")
-    
+        raise ValueError("issue_number is required in context for plan mode")
+
     client = context.gh_client
     issue_number = context.issue_number
-    
-    # Check if we're in CI fix mode
-    is_ci_fix_mode = os.getenv("CI_FIX_MODE", "").lower() == "true"
-    context.is_ci_fix_mode = is_ci_fix_mode
-    
-    # If in CI fix mode, load CI feedback from PR comments
-    if is_ci_fix_mode and context.pr_number:
-        pr_comments = client.list_pr_comments(context.pr_number)
-        ci_feedback = _load_latest_ci_feedback(pr_comments)
-        context.ci_feedback = ci_feedback
-        if ci_feedback:
-            logger.info("Loaded %d CI feedback items from PR #%d", len(ci_feedback), context.pr_number)
-    
+
+    # Check and configure CI fix mode
+    setup_ci_fix_mode(context)
+
     issue = client.get_issue(issue_number)
-    comments = client.list_issue_comments(issue_number)
-    plan = _load_latest_plan(comments)
+
+    # Load plan from issue comments
+    plan = load_plan_from_issue(client, issue_number)
 
     if not plan:
         comment_no_plan_found(client, issue.number, issue.url)
@@ -79,88 +84,86 @@ async def run_coder_async(*, context: AgentContext) -> None:
     # Get and update iteration count
     current_iteration = _get_iteration_count(client, issue_number)
     new_iteration = current_iteration + 1
-    
+
     if new_iteration > MAX_DEV_ITERATIONS:
         comment_max_iterations_reached(
             client, issue.number, issue.url, (current_iteration, MAX_DEV_ITERATIONS)
         )
         return
-    
+
     _update_iteration_count(client, issue_number, new_iteration)
-    logger.info("Starting iteration %d/%d for issue #%d", new_iteration, MAX_DEV_ITERATIONS, issue_number)
+    logger.info(
+        "Starting iteration %d/%d for issue #%d", new_iteration, MAX_DEV_ITERATIONS, issue_number
+    )
 
     # Update context with iteration info
     context.iteration = new_iteration
     context.max_iterations = MAX_DEV_ITERATIONS
 
-    # Check if there's an existing branch to update
-    if is_ci_fix_mode and context.pr_number:
-        pr_info = client.get_pull_request(context.pr_number)
-        existing_branch = pr_info.head_ref
-        logger.info("CI fix mode: using existing PR branch %s", existing_branch)
-    else:
-        existing_branch = _find_existing_branch(client, issue_number)
-    is_update = existing_branch is not None
-    
-    # Create temporary directory for clone
-    temp_dir = tempfile.mkdtemp(prefix="coder_agent_")
-    clone_path = Path(temp_dir) / "repo"
+    # Determine which branch to use
+    branch_info = determine_branch_for_issue(
+        client,
+        issue_number,
+        is_ci_fix_mode=context.is_ci_fix_mode,
+        pr_number=context.pr_number,
+    )
+    is_update = branch_info.is_update
 
-    try:
+    with temp_clone_directory(prefix="coder_agent_") as clone_path:
         clone_url = client.get_clone_url()
-        token = os.getenv("GH_TOKEN", "")
+        token = get_clone_token()
 
         comment_starting_implementation(
             client,
             issue.number,
             (new_iteration, MAX_DEV_ITERATIONS),
             is_update=is_update,
-            branch=existing_branch,
+            branch=branch_info.branch_name if is_update else None,
         )
 
         # Handle branching - clone with the appropriate branch
-        if is_update and existing_branch:
-            branch_name = existing_branch
-            # Clone directly with the existing branch
+        branch_name = branch_info.branch_name
+        if is_update:
             if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
-                # In CI fix mode, don't fall back to creating a new branch
-                if is_ci_fix_mode:
+                if context.is_ci_fix_mode:
                     comment_clone_failed(
                         client, issue.number, branch=branch_name, is_ci_fix_mode=True
                     )
+                    logger.error("Failed to clone existing branch %s in CI fix mode", branch_name)
                     return
                 # Normal mode: fall back to cloning default branch and creating new branch
                 if not _clone_repository(clone_url, token, clone_path):
                     comment_clone_failed(client, issue.number)
+                    logger.error("Failed to clone repository for issue #%d", issue_number)
                     return
-                random_suffix = secrets.token_hex(4)
-                branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
+                branch_name = generate_new_branch_name(issue.number)
                 if not _git_create_branch(clone_path, branch_name):
                     comment_branch_creation_failed(client, issue.number, branch_name)
+                    logger.error("Failed to create branch %s", branch_name)
                     return
                 is_update = False
         else:
             if not _clone_repository(clone_url, token, clone_path):
                 comment_clone_failed(client, issue.number)
+                logger.error("Failed to clone repository for issue #%d", issue_number)
                 return
-            random_suffix = secrets.token_hex(4)
-            branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
             if not _git_create_branch(clone_path, branch_name):
                 comment_branch_creation_failed(client, issue.number, branch_name)
+                logger.error("Failed to create branch %s", branch_name)
                 return
 
         # Set up context for tools
-        context.workspace = clone_path
-        index = CodeIndex(str(clone_path))
-        index.build()
-        context.index = index
+        setup_context_for_workspace(context, clone_path)
 
         # Run the agent
         summary = await run_coder_agent_async(issue, plan, context)
 
         # Commit and push changes
         commit_prefix = "fix" if is_update else "feat"
-        commit_message = f"{commit_prefix}: implement changes for #{issue.number} (iteration {new_iteration})\n\n{summary}"
+        commit_message = (
+            f"{commit_prefix}: implement changes for #{issue.number} "
+            f"(iteration {new_iteration})\n\n{summary}"
+        )
         has_changes = _git_commit(clone_path, commit_message)
 
         if has_changes:
@@ -175,7 +178,9 @@ async def run_coder_async(*, context: AgentContext) -> None:
                         summary=summary,
                         is_update=True,
                     )
+                    logger.info("Pushed updates to branch %s", branch_name)
                 else:
+                    # Create PR for new branch
                     pr_title = f"[Coder Agent] {issue.title}"
                     pr_body = f"""## Summary
 
@@ -208,11 +213,13 @@ This PR was automatically generated by the Coder Agent to address #{issue.number
                             iteration=(new_iteration, MAX_DEV_ITERATIONS),
                             summary=summary,
                         )
+                        logger.info("Created PR %s for issue #%d", pr.url, issue_number)
                     except Exception as exc:
                         logger.exception("Failed to create PR: %s", exc)
                         comment_pr_creation_failed(client, issue.number, branch_name, exc)
             else:
                 comment_push_failed(client, issue.number, branch_name)
+                logger.error("Failed to push changes to branch %s", branch_name)
         else:
             comment_no_changes(
                 client,
@@ -221,27 +228,39 @@ This PR was automatically generated by the Coder Agent to address #{issue.number
                 iteration=(new_iteration, MAX_DEV_ITERATIONS),
                 summary=summary,
             )
-
-    finally:
-        try:
-            shutil.rmtree(temp_dir)
-        except Exception:
-            pass
+            logger.info("No changes to commit for issue #%d", issue_number)
 
 
 def run_coder(*, context: AgentContext) -> None:
-    """Synchronous wrapper for run_coder_async."""
+    """Run the coder agent based on a plan from issue comments.
+
+    Synchronous wrapper for run_coder_async.
+
+    Args:
+        context: Agent context with issue_number set.
+    """
     asyncio.run(run_coder_async(context=context))
 
 
+# -----------------------------------------------------------------------------
+# CLI entrypoint
+# -----------------------------------------------------------------------------
+
+
 def main() -> int:
-    """CLI entry point for the plan-based coder agent."""
+    """CLI entry point for the plan-based coder agent.
+
+    Environment variables:
+        ISSUE_NUMBER: Required. The issue number to implement.
+        PR_NUMBER: Optional. PR number for CI fix mode.
+        CI_FIX_MODE: Optional. Set to "true" to enable CI fix mode.
+    """
     cfg = load_config()
     issue_number = get_issue_number()
-    
+
     # Configure the SDK for OpenRouter
     configure_sdk()
-    
+
     # Get PR number if available (used in CI fix mode)
     pr_number = None
     pr_number_str = os.getenv("PR_NUMBER", "")
@@ -250,7 +269,7 @@ def main() -> int:
             pr_number = int(pr_number_str)
         except ValueError:
             pass
-    
+
     # Create context
     context = AgentContext(
         gh_client=cfg.gh_client,
@@ -258,7 +277,7 @@ def main() -> int:
         issue_number=issue_number,
         pr_number=pr_number,
     )
-    
+
     run_coder(context=context)
     return 0
 

@@ -52,6 +52,7 @@ class PullRequestFileData:
 @dataclass
 class CheckRunAnnotation:
     """Annotation from a check run (usually a linter/test error)."""
+
     path: str
     start_line: int
     end_line: int
@@ -65,7 +66,9 @@ class CheckRunData:
     id: int
     name: str
     status: str  # queued, in_progress, completed
-    conclusion: str | None  # success, failure, neutral, cancelled, skipped, timed_out, action_required
+    conclusion: (
+        str | None
+    )  # success, failure, neutral, cancelled, skipped, timed_out, action_required
     started_at: datetime | None
     completed_at: datetime | None
     html_url: str
@@ -77,18 +80,22 @@ class CheckRunData:
 @dataclass
 class WorkflowRunData:
     """Data about a GitHub Actions workflow run."""
+
     id: int
     name: str
     status: str  # queued, in_progress, completed
-    conclusion: str | None  # success, failure, neutral, cancelled, skipped, timed_out, action_required
+    conclusion: (
+        str | None
+    )  # success, failure, neutral, cancelled, skipped, timed_out, action_required
     html_url: str
     head_sha: str
     run_attempt: int = 1
 
 
-@dataclass 
+@dataclass
 class WorkflowJobData:
     """Data about a job within a workflow run."""
+
     id: int
     name: str
     status: str
@@ -99,6 +106,7 @@ class WorkflowJobData:
 @dataclass
 class WorkflowLogData:
     """Parsed log data from a workflow run."""
+
     job_name: str
     log_content: str
     error_lines: list[str]  # Lines that look like errors
@@ -239,7 +247,7 @@ class GitHubClient:
                     )
             except Exception:
                 pass  # Some check runs may not have annotations
-            
+
             check_runs.append(
                 CheckRunData(
                     id=check.id,
@@ -264,8 +272,9 @@ class GitHubClient:
         """Get only the failed check runs for a pull request with details."""
         all_checks = self.get_check_runs_with_details(pr_number)
         return [
-            check for check in all_checks
-            if check.status == "completed" 
+            check
+            for check in all_checks
+            if check.status == "completed"
             and check.conclusion not in ("success", "skipped", "neutral")
         ]
 
@@ -361,7 +370,7 @@ class GitHubClient:
         event: str,
     ) -> None:
         """Create a pull request review.
-        
+
         Args:
             pr_number: The pull request number.
             body: The review body/summary.
@@ -376,7 +385,7 @@ class GitHubClient:
         """Get workflow runs associated with a pull request."""
         pr = self._repo.get_pull(pr_number)
         head_sha = pr.head.sha
-        
+
         runs = []
         # Get workflow runs for the head SHA
         for run in self._repo.get_workflow_runs(head_sha=head_sha):
@@ -397,9 +406,9 @@ class GitHubClient:
         """Get only the failed workflow runs for a pull request."""
         all_runs = self.get_workflow_runs_for_pr(pr_number)
         return [
-            run for run in all_runs
-            if run.status == "completed" 
-            and run.conclusion not in ("success", "skipped", "neutral")
+            run
+            for run in all_runs
+            if run.status == "completed" and run.conclusion not in ("success", "skipped", "neutral")
         ]
 
     def get_workflow_run_jobs(self, run_id: int) -> list[WorkflowJobData]:
@@ -408,14 +417,16 @@ class GitHubClient:
         jobs = []
         for job in run.jobs():
             steps = []
-            if hasattr(job, 'steps') and job.steps:
+            if hasattr(job, "steps") and job.steps:
                 for step in job.steps:
-                    steps.append({
-                        "name": step.name,
-                        "status": step.status,
-                        "conclusion": step.conclusion,
-                        "number": step.number,
-                    })
+                    steps.append(
+                        {
+                            "name": step.name,
+                            "status": step.status,
+                            "conclusion": step.conclusion,
+                            "number": step.number,
+                        }
+                    )
             jobs.append(
                 WorkflowJobData(
                     id=job.id,
@@ -428,118 +439,124 @@ class GitHubClient:
         return jobs
 
     def download_workflow_run_logs(
-        self, 
-        run_id: int, 
+        self,
+        run_id: int,
         token: str | None = None,
         max_size_mb: int = 10,
     ) -> list[WorkflowLogData]:
         """Download and parse workflow run logs.
-        
+
         Args:
             run_id: The workflow run ID
             token: GitHub token (uses instance token if not provided)
             max_size_mb: Maximum log size to download in MB
-            
+
         Returns:
             List of WorkflowLogData with parsed logs for each job
         """
         if token is None:
             # Try to get token from the Github instance
             token = self._gh._Github__requester._Requester__auth.token
-        
+
         logs_url = f"https://api.github.com/repos/{self._repo.full_name}/actions/runs/{run_id}/logs"
-        
+
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
         }
-        
+
         try:
             response = requests.get(logs_url, headers=headers, stream=True, timeout=60)
             response.raise_for_status()
-            
+
             # Check content length
-            content_length = int(response.headers.get('content-length', 0))
+            content_length = int(response.headers.get("content-length", 0))
             if content_length > max_size_mb * 1024 * 1024:
-                return [WorkflowLogData(
-                    job_name="error",
-                    log_content=f"Logs too large ({content_length / 1024 / 1024:.1f} MB)",
-                    error_lines=[],
-                )]
-            
+                return [
+                    WorkflowLogData(
+                        job_name="error",
+                        log_content=f"Logs too large ({content_length / 1024 / 1024:.1f} MB)",
+                        error_lines=[],
+                    )
+                ]
+
             # Download and extract zip
             zip_content = io.BytesIO(response.content)
             logs = []
-            
-            with zipfile.ZipFile(zip_content, 'r') as zip_file:
+
+            with zipfile.ZipFile(zip_content, "r") as zip_file:
                 for file_name in zip_file.namelist():
-                    if file_name.endswith('.txt'):
+                    if file_name.endswith(".txt"):
                         # Parse job name from file path (format: job_name/step_name.txt)
-                        job_name = file_name.split('/')[0] if '/' in file_name else file_name
-                        
+                        job_name = file_name.split("/")[0] if "/" in file_name else file_name
+
                         try:
-                            content = zip_file.read(file_name).decode('utf-8', errors='replace')
-                            
+                            content = zip_file.read(file_name).decode("utf-8", errors="replace")
+
                             # Truncate very long logs
                             max_chars = 50000
                             if len(content) > max_chars:
                                 content = content[:max_chars] + "\n... (truncated)"
-                            
+
                             # Extract error-looking lines
                             error_lines = self._extract_error_lines(content)
-                            
-                            logs.append(WorkflowLogData(
-                                job_name=job_name,
-                                log_content=content,
-                                error_lines=error_lines,
-                            ))
+
+                            logs.append(
+                                WorkflowLogData(
+                                    job_name=job_name,
+                                    log_content=content,
+                                    error_lines=error_lines,
+                                )
+                            )
                         except Exception:
                             pass
-            
+
             return logs
-            
+
         except requests.exceptions.RequestException as e:
-            return [WorkflowLogData(
-                job_name="error",
-                log_content=f"Failed to download logs: {e}",
-                error_lines=[],
-            )]
+            return [
+                WorkflowLogData(
+                    job_name="error",
+                    log_content=f"Failed to download logs: {e}",
+                    error_lines=[],
+                )
+            ]
 
     def _extract_error_lines(self, log_content: str) -> list[str]:
         """Extract lines that look like errors from log content."""
         error_patterns = [
-            r'(?i)^.*error[:\s].*$',
-            r'(?i)^.*failed[:\s].*$',
-            r'(?i)^.*exception[:\s].*$',
-            r'(?i)^.*traceback.*$',
-            r'^.*Error:.*$',
-            r'^.*FAILED.*$',
-            r'^E\s+.*$',  # pytest error lines
+            r"(?i)^.*error[:\s].*$",
+            r"(?i)^.*failed[:\s].*$",
+            r"(?i)^.*exception[:\s].*$",
+            r"(?i)^.*traceback.*$",
+            r"^.*Error:.*$",
+            r"^.*FAILED.*$",
+            r"^E\s+.*$",  # pytest error lines
             r'^\s*File ".*", line \d+',  # Python tracebacks
-            r'(?i)^.*cannot find.*$',
-            r'(?i)^.*not found.*$',
-            r'(?i)^.*undefined.*$',
-            r'(?i)^.*syntax error.*$',
-            r'(?i)^.*type error.*$',
-            r'(?i)^.*name error.*$',
-            r'(?i)^.*import error.*$',
-            r'(?i)^.*assertion.*failed.*$',
-            r'(?i)^.*exit code [1-9].*$',
+            r"(?i)^.*cannot find.*$",
+            r"(?i)^.*not found.*$",
+            r"(?i)^.*undefined.*$",
+            r"(?i)^.*syntax error.*$",
+            r"(?i)^.*type error.*$",
+            r"(?i)^.*name error.*$",
+            r"(?i)^.*import error.*$",
+            r"(?i)^.*assertion.*failed.*$",
+            r"(?i)^.*exit code [1-9].*$",
         ]
-        
+
         error_lines = []
-        for line in log_content.split('\n'):
+        for line in log_content.split("\n"):
             line = line.strip()
             if not line:
                 continue
             for pattern in error_patterns:
                 if re.match(pattern, line):
                     # Clean up timestamp prefixes from GitHub logs
-                    cleaned = re.sub(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s*', '', line)
+                    cleaned = re.sub(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s*", "", line)
                     if cleaned and len(cleaned) < 500:  # Skip very long lines
                         error_lines.append(cleaned)
                     break
-        
+
         # Deduplicate while preserving order
         seen = set()
         unique_errors = []
@@ -547,25 +564,25 @@ class GitHubClient:
             if line not in seen:
                 seen.add(line)
                 unique_errors.append(line)
-        
+
         return unique_errors[:50]  # Limit to 50 error lines
 
     def get_failed_workflow_logs(
-        self, 
+        self,
         pr_number: int,
         token: str | None = None,
     ) -> dict[str, list[WorkflowLogData]]:
         """Get logs for all failed workflow runs on a PR.
-        
+
         Returns:
             Dict mapping workflow run name to list of log data
         """
         failed_runs = self.get_failed_workflow_runs(pr_number)
-        
+
         all_logs = {}
         for run in failed_runs:
             logs = self.download_workflow_run_logs(run.id, token=token)
             if logs:
                 all_logs[run.name] = logs
-        
+
         return all_logs

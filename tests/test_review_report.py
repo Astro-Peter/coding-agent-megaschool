@@ -1,5 +1,7 @@
 """Tests for reviewer agent review decision output."""
+
 import pytest
+from pydantic import ValidationError
 
 from github_agents.reviewer_agent.agent import ReviewDecision
 
@@ -31,7 +33,7 @@ def test_review_decision_changes_requested():
 
 def test_review_decision_status_validation():
     """Test ReviewDecision validates status values."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         ReviewDecision(
             status="INVALID",
             summary="Test",
