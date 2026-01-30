@@ -14,20 +14,14 @@ name: SDLC Agent
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 jobs:
-  # Plan on new issue with 'agent' label, or when 'agent' label is added
+  # Plan when 'agent' label is added
   plan:
     name: Plan
-    # Only trigger when:
-    # 1. Issue is opened with 'agent' label already attached, OR
-    # 2. The 'agent' label specifically is being added
-    if: >
-      github.event_name == 'issues' && (
-        (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'agent')) ||
-        (github.event.action == 'labeled' && github.event.label.name == 'agent')
-      )
+    # Only trigger when the 'agent' label is being added
+    if: github.event.label.name == 'agent'
     uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-planner.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
@@ -36,18 +30,14 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
 
-  # Code automatically after plan on issues with 'agent' label
+  # Code automatically after plan
   code_after_plan:
     name: Code (auto)
     needs: plan
-    if: |
-      github.event_name == 'issues' && 
-      needs.plan.result == 'success' &&
-      contains(github.event.issue.labels.*.name, 'agent')
+    if: needs.plan.result == 'success'
     uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-coder.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
-

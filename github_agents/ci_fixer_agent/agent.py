@@ -19,7 +19,7 @@ from agents import Agent, Runner
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
 from github_agents.common.context import AgentContext
-from github_agents.common.github_client import CheckRunAnnotation, CheckRunData, GitHubClient
+from github_agents.common.github_client import CheckRunData
 from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_ci_fixer_tools
 
@@ -278,25 +278,40 @@ and provide actionable suggestions for how to fix them.
 ## Changed Files
 {diff_context}
 
-## CI Check Failures
+## CI Check Failures (Summary)
 {failed_checks_info}
 
 ## Your Task
 
-1. Analyze the failed CI checks and their error messages/annotations
-2. Identify the root causes of each failure
-3. Provide specific, actionable suggestions for fixing each issue
-4. Include code examples where helpful
-5. Offer general advice for preventing similar issues
+1. First, use the CI tools to get detailed error information:
+   - `get_check_annotations`: Get structured error messages (file paths, line numbers)
+   - `list_failed_workflows`: List all failed workflow runs
+   - `get_workflow_jobs`: Get jobs for a specific workflow run
+   - `get_workflow_logs`: Get the actual log output with error messages
 
-Use the available tools to:
-- `read_file`: Read source files to understand the context of errors
-- `search_codebase`: Search for related code, imports, or similar patterns
-- `list_dir`: Explore the project structure
+2. Analyze the errors to identify root causes
 
-Focus on:
+3. Use code exploration tools to understand context:
+   - `read_file`: Read source files mentioned in errors
+   - `search_codebase`: Search for related code, imports, or patterns
+   - `list_dir`: Explore the project structure
+
+4. Provide specific, actionable suggestions for fixing each issue
+
+5. Include code examples where helpful
+
+## Recommended Workflow
+
+1. Start with `get_check_annotations` - this often has structured error info
+2. If you need more details, use `list_failed_workflows` to find workflow IDs
+3. Use `get_workflow_logs` with the workflow ID to get full log output
+4. Read the relevant source files to understand the context
+5. Provide your analysis and suggestions
+
+## Focus Areas
+
 - Syntax errors and typos
-- Import/dependency issues
+- Import/dependency issues  
 - Type errors (for typed languages)
 - Test failures and assertions
 - Linting violations
@@ -428,7 +443,7 @@ async def run_ci_fixer_async(*, context: AgentContext) -> CIAnalysis | None:
     context.workspace = workspace_root
     context.index = index
     
-    # Run the CI fixer agent
+    # Run the CI fixer agent (it will fetch logs on-demand using tools)
     analysis = await run_ci_fixer_agent_async(
         pr_title=pr.title,
         pr_body=pr.body,

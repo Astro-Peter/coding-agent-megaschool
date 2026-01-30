@@ -1,6 +1,7 @@
 """Shared tools for agents using the OpenAI Agents SDK."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -281,6 +282,180 @@ def mark_complete(ctx: RunContextWrapper[AgentContext], summary: str) -> str:
     return f"COMPLETE: {summary}"
 
 
+# --- CI/Workflow Tools ---
+
+@function_tool
+def list_failed_workflows(ctx: RunContextWrapper[AgentContext]) -> dict[str, Any]:
+    """List all failed workflow runs for the current PR.
+    
+    Returns a list of failed workflows with their IDs, names, and conclusions.
+    Use get_workflow_logs to fetch detailed logs for a specific workflow.
+    """
+    pr_number = ctx.context.pr_number
+    if pr_number is None:
+        return {"ok": False, "message": "No PR number in context"}
+    
+    client = ctx.context.gh_client
+    
+    try:
+        failed_runs = client.get_failed_workflow_runs(pr_number)
+        
+        if not failed_runs:
+            return {
+                "ok": True, 
+                "message": "No failed workflows found",
+                "workflows": []
+            }
+        
+        workflows = []
+        for run in failed_runs:
+            workflows.append({
+                "id": run.id,
+                "name": run.name,
+                "conclusion": run.conclusion,
+                "url": run.html_url,
+            })
+        
+        return {"ok": True, "workflows": workflows}
+    except Exception as e:
+        return {"ok": False, "message": f"Failed to get workflows: {e}"}
+
+
+@function_tool
+def get_workflow_jobs(ctx: RunContextWrapper[AgentContext], workflow_run_id: int) -> dict[str, Any]:
+    """Get jobs for a specific workflow run.
+    
+    Args:
+        workflow_run_id: The ID of the workflow run (from list_failed_workflows).
+        
+    Returns a list of jobs with their names, statuses, and step information.
+    """
+    client = ctx.context.gh_client
+    
+    try:
+        jobs = client.get_workflow_run_jobs(workflow_run_id)
+        
+        job_list = []
+        for job in jobs:
+            job_info = {
+                "id": job.id,
+                "name": job.name,
+                "status": job.status,
+                "conclusion": job.conclusion,
+            }
+            
+            # Include failed steps if available
+            if job.steps:
+                failed_steps = [
+                    s for s in job.steps 
+                    if s.get("conclusion") not in ("success", "skipped", None)
+                ]
+                if failed_steps:
+                    job_info["failed_steps"] = [
+                        {"name": s["name"], "conclusion": s.get("conclusion")}
+                        for s in failed_steps
+                    ]
+            
+            job_list.append(job_info)
+        
+        return {"ok": True, "jobs": job_list}
+    except Exception as e:
+        return {"ok": False, "message": f"Failed to get jobs: {e}"}
+
+
+@function_tool
+def get_workflow_logs(
+    ctx: RunContextWrapper[AgentContext], 
+    workflow_run_id: int,
+    job_name_filter: str = "",
+) -> dict[str, Any]:
+    """Get logs for a specific workflow run. Can optionally filter by job name.
+    
+    Args:
+        workflow_run_id: The ID of the workflow run (from list_failed_workflows).
+        job_name_filter: Optional filter to only get logs for jobs containing this string.
+        
+    Returns parsed log data including extracted error lines and log content.
+    """
+    client = ctx.context.gh_client
+    token = os.getenv("GH_TOKEN", "")
+    
+    try:
+        logs = client.download_workflow_run_logs(workflow_run_id, token=token)
+        
+        if not logs:
+            return {"ok": False, "message": "No logs found for this workflow run"}
+        
+        # Filter by job name if specified
+        if job_name_filter:
+            logs = [l for l in logs if job_name_filter.lower() in l.job_name.lower()]
+        
+        if not logs:
+            return {"ok": False, "message": f"No logs found matching job filter: {job_name_filter}"}
+        
+        result = []
+        for log in logs:
+            log_entry = {
+                "job_name": log.job_name,
+                "error_count": len(log.error_lines),
+                "errors": log.error_lines[:50],  # Limit to 50 errors
+            }
+            
+            # Include truncated log content
+            content = log.log_content
+            if len(content) > 5000:
+                # Show last 5000 chars (usually has the errors)
+                content = "... (earlier output truncated) ...\n" + content[-5000:]
+            log_entry["log_content"] = content
+            
+            result.append(log_entry)
+        
+        return {"ok": True, "logs": result}
+    except Exception as e:
+        return {"ok": False, "message": f"Failed to get logs: {e}"}
+
+
+@function_tool
+def get_check_annotations(ctx: RunContextWrapper[AgentContext]) -> dict[str, Any]:
+    """Get check run annotations (structured error messages) for the current PR.
+    
+    Returns annotations from check runs, which often include file paths, 
+    line numbers, and specific error messages from linters and test frameworks.
+    """
+    pr_number = ctx.context.pr_number
+    if pr_number is None:
+        return {"ok": False, "message": "No PR number in context"}
+    
+    client = ctx.context.gh_client
+    
+    try:
+        check_runs = client.get_failed_check_runs(pr_number)
+        
+        all_annotations = []
+        for check in check_runs:
+            if check.annotations:
+                for ann in check.annotations:
+                    all_annotations.append({
+                        "check_name": check.name,
+                        "file": ann.path,
+                        "line": ann.start_line,
+                        "level": ann.annotation_level,
+                        "message": ann.message,
+                        "title": ann.title,
+                    })
+        
+        if not all_annotations:
+            return {
+                "ok": True, 
+                "message": "No annotations found (try get_workflow_logs for full logs)",
+                "annotations": []
+            }
+        
+        return {"ok": True, "annotations": all_annotations}
+    except Exception as e:
+        return {"ok": False, "message": f"Failed to get annotations: {e}"}
+
+
 # --- Tool Collections ---
 
 def get_file_tools() -> list:
@@ -309,10 +484,14 @@ def get_reviewer_tools() -> list:
 
 
 def get_ci_fixer_tools() -> list:
-    """Get tools for the CI fixer agent (read-only analysis)."""
+    """Get tools for the CI fixer agent (read-only analysis + CI log access)."""
     return [
         get_workdir,
         list_dir,
         read_file,
         search_codebase,
+        list_failed_workflows,
+        get_workflow_jobs,
+        get_workflow_logs,
+        get_check_annotations,
     ]
