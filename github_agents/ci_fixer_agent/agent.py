@@ -2,6 +2,7 @@
 
 This agent triggers on CI check failures and analyzes what went wrong,
 posting detailed comments with suggestions for how to fix the issues.
+The coder agent then picks up these suggestions in a subsequent job.
 """
 from __future__ import annotations
 
@@ -9,56 +10,22 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents import Agent, Runner, RunHooks, Tool
-from agents.run_context import RunContextWrapper
+from agents import Agent, Runner
 
-from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
 from github_agents.common.context import AgentContext
-from github_agents.common.github_client import CheckRunData
+from github_agents.common.github_client import CheckRunData, WorkflowLogData
 from github_agents.common.sdk_config import configure_sdk, get_model_name
-from github_agents.common.tools import get_ci_fixer_tools
+from github_agents.ci_fixer_agent.prompts import (
+    build_ci_analysis_prompt,
+    CI_ANALYZER_SYSTEM_INSTRUCTIONS,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class ToolLoggingHooks(RunHooks[AgentContext]):
-    """Hooks to log tool calls for debugging and observability."""
-
-    async def on_tool_start(
-        self,
-        context: RunContextWrapper[AgentContext],
-        agent: Agent[AgentContext],
-        tool: Tool,
-    ) -> None:
-        """Log when a tool is about to be called."""
-        logger.info(
-            "Tool call started: %s (agent=%s)",
-            tool.name,
-            agent.name,
-        )
-
-    async def on_tool_end(
-        self,
-        context: RunContextWrapper[AgentContext],
-        agent: Agent[AgentContext],
-        tool: Tool,
-        result: str,
-    ) -> None:
-        """Log when a tool call completes."""
-        # Truncate long results for readability
-        result_preview = result[:200] + "..." if len(result) > 200 else result
-        logger.info(
-            "Tool call completed: %s (agent=%s) -> %s",
-            tool.name,
-            agent.name,
-            result_preview,
-        )
 
 
 # Marker for machine-readable CI analysis
@@ -71,7 +38,6 @@ class CIFixSuggestion(BaseModel):
     line: int | None = Field(default=None, description="Line number if applicable")
     issue: str = Field(description="Description of the issue")
     suggestion: str = Field(description="Suggested fix or action to take")
-    code_example: str | None = Field(default=None, description="Example code fix if applicable")
 
 
 class CIAnalysis(BaseModel):
@@ -91,10 +57,6 @@ class CIAnalysis(BaseModel):
     suggestions: list[CIFixSuggestion] = Field(
         default_factory=list,
         description="Specific suggestions for fixing each issue"
-    )
-    general_advice: list[str] = Field(
-        default_factory=list,
-        description="General advice for preventing similar issues"
     )
 
 
@@ -143,6 +105,67 @@ def _format_all_failures(failed_checks: list[CheckRunData]) -> str:
     for check in failed_checks:
         lines.append(_format_check_failure(check))
         lines.append("")
+    
+    return "\n".join(lines)
+
+
+def _format_workflow_logs(logs_by_workflow: dict[str, list[WorkflowLogData]]) -> str:
+    """Format workflow logs for the agent prompt."""
+    if not logs_by_workflow:
+        return "No workflow logs available."
+    
+    lines = ["## Workflow Logs\n"]
+    
+    for workflow_name, logs in logs_by_workflow.items():
+        lines.append(f"### Workflow: {workflow_name}\n")
+        
+        for log in logs:
+            lines.append(f"**Job: {log.job_name}**")
+            
+            if log.error_lines:
+                lines.append("\n**Extracted Errors:**")
+                for err in log.error_lines[:30]:  # Limit errors shown
+                    lines.append(f"- {err}")
+            
+            # Include truncated log content
+            content = log.log_content
+            if len(content) > 3000:
+                content = "... (earlier output truncated) ...\n" + content[-3000:]
+            lines.append(f"\n**Log Output:**\n```\n{content}\n```\n")
+        
+        lines.append("")
+    
+    return "\n".join(lines)
+
+
+def _format_annotations(failed_checks: list[CheckRunData]) -> str:
+    """Format all annotations from failed checks."""
+    all_annotations = []
+    for check in failed_checks:
+        if check.annotations:
+            for ann in check.annotations:
+                all_annotations.append({
+                    "check": check.name,
+                    "file": ann.path,
+                    "line": ann.start_line,
+                    "level": ann.annotation_level,
+                    "message": ann.message,
+                    "title": ann.title,
+                })
+    
+    if not all_annotations:
+        return "No structured annotations available."
+    
+    lines = ["## Structured Error Annotations\n"]
+    for ann in all_annotations[:50]:  # Limit to 50 annotations
+        lines.append(f"- **{ann['file']}:{ann['line']}** ({ann['check']})")
+        lines.append(f"  - Level: {ann['level']}")
+        lines.append(f"  - Message: {ann['message']}")
+        if ann['title']:
+            lines.append(f"  - Title: {ann['title']}")
+    
+    if len(all_annotations) > 50:
+        lines.append(f"\n... and {len(all_annotations) - 50} more annotations")
     
     return "\n".join(lines)
 
@@ -203,22 +226,12 @@ def _format_analysis_comment(analysis: CIAnalysis, pr_url: str) -> str:
                 lines.append(f"   - Line: {sugg.line}")
             lines.append(f"   - Issue: {sugg.issue}")
             lines.append(f"   - Fix: {sugg.suggestion}")
-            if sugg.code_example:
-                lines.append(f"   ```")
-                lines.append(f"   {sugg.code_example}")
-                lines.append(f"   ```")
             lines.append("")
-    
-    if analysis.general_advice:
-        lines.extend([
-            "### General Advice",
-            *[f"- 💡 {advice}" for advice in analysis.general_advice],
-            "",
-        ])
     
     lines.extend([
         "---",
         "*This analysis was generated automatically by the CI Fixer Agent.*",
+        "*The Coder Agent will now attempt to fix these issues.*",
     ])
     
     # Add machine-readable data
@@ -294,126 +307,42 @@ def _write_actions_summary(analysis: CIAnalysis, pr_url: str) -> None:
 
 # --- Agent Definition ---
 
-def _build_ci_fixer_instructions(
-    pr_title: str,
-    pr_body: str,
-    failed_checks_info: str,
-    diff_context: str,
-) -> str:
-    """Build the instructions for the CI fixer agent."""
-    return f"""You are an expert CI/CD debugging assistant. Your task is to analyze CI check failures 
-and provide actionable suggestions for how to fix them.
-
-## Pull Request Information
-
-**Title:** {pr_title}
-
-**Description:**
-{pr_body}
-
-## Changed Files
-{diff_context}
-
-## CI Check Failures (Summary)
-{failed_checks_info}
-
-## Your Workflow
-
-Use the CI tools to gather error information, then analyze and provide suggestions.
-
-### Available Tools
-
-1. **`get_check_annotations`** - Get structured error messages with file paths and line numbers 
-   from linters and test frameworks. Start here.
-
-2. **`list_failed_workflows`** - Get the list of failed workflow runs and their IDs.
-
-3. **`get_workflow_logs(workflow_run_id, job_name_filter="")`** - Get log output for a workflow run.
-   - `workflow_run_id`: Required. Get this from `list_failed_workflows`.
-   - `job_name_filter`: Optional. Filter by JOB name (e.g. "build (3.10)"), NOT step name.
-     Leave empty to get all logs. If unsure, omit this parameter.
-
-4. **`get_workflow_jobs`** - See which specific jobs and steps failed. Use this to get exact job names
-   if you need to filter logs.
-
-### Recommended Approach
-
-1. Call `get_check_annotations` first - this often has structured error info with file paths and line numbers
-2. Call `list_failed_workflows` to get workflow IDs
-3. Call `get_workflow_logs(workflow_run_id)` WITHOUT a filter to get all logs
-4. Analyze the errors and provide your suggestions
-
-## Focus Areas
-
-- Syntax errors and typos
-- Import/dependency issues  
-- Type errors (for typed languages)
-- Test failures and assertions
-- Linting violations
-- Build configuration problems
-
-Be specific in your suggestions. Include file paths, line numbers, and code snippets.
-"""
-
-
-def _build_ci_fixer_agent(
-    pr_title: str,
-    pr_body: str,
-    failed_checks_info: str,
-    diff_context: str,
-) -> Agent[AgentContext]:
-    """Build the CI fixer agent with dynamic instructions."""
-    instructions = _build_ci_fixer_instructions(
-        pr_title=pr_title,
-        pr_body=pr_body,
-        failed_checks_info=failed_checks_info,
-        diff_context=diff_context,
-    )
-    
+def _build_ci_fixer_agent() -> Agent[AgentContext]:
+    """Build the CI fixer agent (no tools, just structured output)."""
     return Agent[AgentContext](
-        name="CIFixer",
+        name="CIAnalyzer",
         model=get_model_name(),
-        instructions=instructions,
-        tools=get_ci_fixer_tools(),
+        instructions=CI_ANALYZER_SYSTEM_INSTRUCTIONS,
+        tools=[],  # No tools - just analyze the provided information
         output_type=CIAnalysis,
     )
 
 
 # --- Agent Execution ---
 
-async def run_ci_fixer_agent_async(
-    pr_title: str,
-    pr_body: str,
-    failed_checks_info: str,
-    diff_context: str,
+async def run_ci_analysis_async(
+    prompt: str,
     context: AgentContext,
 ) -> CIAnalysis:
-    """Run the CI fixer agent and return the analysis."""
-    agent = _build_ci_fixer_agent(
-        pr_title=pr_title,
-        pr_body=pr_body,
-        failed_checks_info=failed_checks_info,
-        diff_context=diff_context,
-    )
+    """Run the CI analyzer agent and return the analysis."""
+    agent = _build_ci_fixer_agent()
     
     try:
         result = await Runner.run(
             agent,
-            "Please analyze the CI failures and provide suggestions for fixing them.",
+            prompt,
             context=context,
-            max_turns=15,
-            hooks=ToolLoggingHooks(),
+            max_turns=1,  # Single turn - no tools to call
         )
         return result.final_output_as(CIAnalysis)
     except Exception as exc:
-        logger.exception("CI Fixer agent failed: %s", exc)
+        logger.exception("CI analysis failed: %s", exc)
         return CIAnalysis(
             status="UNABLE_TO_ANALYZE",
             summary=f"Failed to analyze CI failures: {exc}",
             failed_checks=[],
             root_causes=[],
             suggestions=[],
-            general_advice=["Please check the CI logs manually."],
         )
 
 
@@ -446,23 +375,33 @@ async def run_ci_fixer_async(*, context: AgentContext) -> CIAnalysis | None:
         
         if not failed_checks:
             logger.info("No failed checks found for PR #%d", pr_number)
-            # Post a brief comment indicating no issues
             analysis = CIAnalysis(
                 status="NO_ISSUES",
                 summary="All CI checks have passed or there are no check failures to analyze.",
                 failed_checks=[],
                 root_causes=[],
                 suggestions=[],
-                general_advice=[],
             )
             return analysis
         
         failed_checks_info = _format_all_failures(failed_checks)
+        annotations_info = _format_annotations(failed_checks)
         logger.info("Found %d failed checks to analyze", len(failed_checks))
     except Exception as e:
         logger.warning("Failed to get CI status: %s", e)
         failed_checks_info = f"Could not fetch CI status: {e}"
+        annotations_info = ""
         failed_checks = []
+    
+    # Get workflow logs
+    try:
+        token = os.getenv("GH_TOKEN", "")
+        logs_by_workflow = client.get_failed_workflow_logs(pr_number, token=token)
+        workflow_logs_info = _format_workflow_logs(logs_by_workflow)
+        logger.info("Fetched logs from %d failed workflows", len(logs_by_workflow))
+    except Exception as e:
+        logger.warning("Failed to get workflow logs: %s", e)
+        workflow_logs_info = f"Could not fetch workflow logs: {e}"
     
     # Get changed files for context
     try:
@@ -472,21 +411,18 @@ async def run_ci_fixer_async(*, context: AgentContext) -> CIAnalysis | None:
         logger.warning("Failed to get PR diff: %s", e)
         diff_context = "Could not fetch changed files."
     
-    # Build code index if workspace is available
-    workspace_root = context.workspace or Path(os.getenv("GITHUB_WORKSPACE", os.getcwd()))
-    index = CodeIndex(str(workspace_root))
-    index.build()
-    context.workspace = workspace_root
-    context.index = index
-    
-    # Run the CI fixer agent (it will fetch logs on-demand using tools)
-    analysis = await run_ci_fixer_agent_async(
+    # Build the analysis prompt with all gathered information
+    prompt = build_ci_analysis_prompt(
         pr_title=pr.title,
-        pr_body=pr.body,
-        failed_checks_info=failed_checks_info,
+        pr_body=pr.body or "",
         diff_context=diff_context,
-        context=context,
+        failed_checks_info=failed_checks_info,
+        annotations_info=annotations_info,
+        workflow_logs_info=workflow_logs_info,
     )
+    
+    # Run the CI analyzer agent (single turn, no tools)
+    analysis = await run_ci_analysis_async(prompt, context)
     
     # Populate failed_checks from actual data if agent didn't
     if not analysis.failed_checks and failed_checks:
@@ -496,7 +432,6 @@ async def run_ci_fixer_async(*, context: AgentContext) -> CIAnalysis | None:
             failed_checks=[c.name for c in failed_checks],
             root_causes=analysis.root_causes,
             suggestions=analysis.suggestions,
-            general_advice=analysis.general_advice,
         )
     
     # Post the analysis comment

@@ -13,6 +13,10 @@ from agents import Agent, Runner
 from github_agents.common.config import get_issue_number, load_config
 from github_agents.common.context import AgentContext
 from github_agents.common.sdk_config import configure_sdk, get_model_name
+from github_agents.planner_agent.prompts import (
+    PLANNER_SYSTEM_INSTRUCTIONS,
+    build_planner_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +34,7 @@ def _create_planner_agent() -> Agent[AgentContext]:
     return Agent[AgentContext](
         name="Planner",
         model=get_model_name(),
-        instructions="""You are a planning assistant for a multi-agent GitHub workflow.
-
-Your task is to analyze GitHub issues and create implementation plans.
-
-Guidelines:
-- Create a brief plan with 3-6 concrete steps
-- Each step should be actionable and specific
-- Focus on what needs to be done, not how long it will take
-- Consider the full development cycle: analysis, implementation, testing, PR
-
-Return a structured plan with:
-- summary: A brief description of what will be implemented
-- steps: An array of 3-6 specific implementation steps""",
+        instructions=PLANNER_SYSTEM_INSTRUCTIONS,
         output_type=Plan,
     )
 
@@ -62,13 +54,7 @@ async def build_plan_async(
     Returns:
         A Plan with summary and steps.
     """
-    prompt = f"""Create a brief implementation plan (3-6 steps) for the following issue.
-
-Issue title:
-{issue_title}
-
-Issue body:
-{issue_body}"""
+    prompt = build_planner_prompt(issue_title, issue_body)
     
     try:
         # Create agent with LiteLLM model

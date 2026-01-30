@@ -22,6 +22,7 @@ from github_agents.common.github_client import GitHubClient, IssueCommentData, I
 from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_coder_tools
 from github_agents.planner_agent.agent import PLAN_MARKER
+from github_agents.coder_agent.prompts import build_coder_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -274,101 +275,17 @@ def _git_push(workdir: Path, branch_name: str) -> bool:
 
 # --- Agent Definition ---
 
-def _build_coder_instructions(
-    issue: IssueData,
-    plan: dict,
-    iteration: int,
-    max_iterations: int,
-    reviewer_feedback: list[str] | None = None,
-    ci_feedback: list[str] | None = None,
-    is_ci_fix_mode: bool = False,
-) -> str:
-    """Build the instructions for the coder agent."""
-    steps = plan.get("steps", [])
-    steps_text = "\n".join(f"  {i+1}. {step}" for i, step in enumerate(steps))
-
-    feedback_section = ""
-    
-    # CI feedback takes priority when in CI fix mode
-    if ci_feedback and is_ci_fix_mode:
-        ci_items = "\n".join(f"  - {item}" for item in ci_feedback)
-        feedback_section = f"""
-## CI Failure Analysis (CRITICAL - Fix these first!)
-The CI checks have failed. The CI Fixer agent identified the following issues:
-{ci_items}
-
-You MUST fix these CI issues before the code can be merged.
-Focus on:
-- Syntax errors and typos
-- Import/dependency issues
-- Type errors
-- Linting violations
-- Test failures
-
-"""
-    
-    if reviewer_feedback:
-        feedback_items = "\n".join(f"  - {item}" for item in reviewer_feedback)
-        feedback_section += f"""
-## Reviewer Feedback (PRIORITY - Address these issues!)
-This is iteration {iteration}/{max_iterations}. The reviewer found the following issues:
-{feedback_items}
-
-You MUST address these issues before proceeding with any other changes.
-"""
-
-    iteration_note = ""
-    if iteration > 1:
-        iteration_note = f"""
-## Iteration Note
-This is iteration {iteration}/{max_iterations} of the development cycle.
-Previous attempts had issues that need to be fixed.
-"""
-
-    mode_context = ""
-    if is_ci_fix_mode:
-        mode_context = """
-## Mode: CI Fix
-You are running in CI fix mode. Your primary goal is to fix CI failures.
-After fixing, the CI will run again automatically.
-"""
-
-    return f"""You are an expert coding agent. Your task is to implement code changes based on a plan.
-
-## Issue
-Title: {issue.title}
-Body: {issue.body}
-{mode_context}
-## Plan
-Summary: {plan.get('summary', 'No summary')}
-Steps:
-{steps_text}
-{iteration_note}{feedback_section}
-## Instructions
-1. First, explore the codebase using list_dir and read_file to understand the structure.
-2. Use search_codebase to find relevant code related to the issue.
-3. Implement the changes step by step using write_file, create_file, replace_in_file, etc.
-4. When you have completed ALL steps, call mark_complete with a summary of what you did.
-
-## Rules
-- Always read a file before modifying it.
-- Make minimal, focused changes.
-- Follow existing code style and conventions.
-- Do not create unnecessary files.
-- If you cannot complete a step, explain why in your mark_complete summary.
-- If there is CI or reviewer feedback, address it FIRST before other changes.
-"""
-
-
 def _build_coder_agent(
     issue: IssueData,
     plan: dict,
     context: AgentContext,
 ) -> Agent[AgentContext]:
     """Build the coder agent with dynamic instructions."""
-    instructions = _build_coder_instructions(
-        issue=issue,
-        plan=plan,
+    instructions = build_coder_instructions(
+        issue_title=issue.title,
+        issue_body=issue.body,
+        plan_summary=plan.get('summary', 'No summary'),
+        steps=plan.get("steps", []),
         iteration=context.iteration,
         max_iterations=context.max_iterations,
         reviewer_feedback=context.reviewer_feedback,

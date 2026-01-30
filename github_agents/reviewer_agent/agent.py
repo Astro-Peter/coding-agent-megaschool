@@ -19,6 +19,7 @@ from github_agents.common.context import AgentContext
 from github_agents.common.github_client import CheckRunData, GitHubClient, IssueData
 from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_reviewer_tools
+from github_agents.reviewer_agent.prompts import build_reviewer_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -278,65 +279,6 @@ def _write_status_output(status: str) -> None:
 
 # --- Agent Definition ---
 
-def _build_reviewer_instructions(
-    pr_title: str,
-    pr_body: str,
-    diff_summary: str,
-    ci_status: str,
-    issue: IssueData | None,
-    iteration: int,
-    max_iterations: int,
-) -> str:
-    """Build the instructions for the reviewer agent."""
-    issue_context = ""
-    if issue:
-        issue_context = f"""
-## Original Issue Requirements
-- Issue #{issue.number}: {issue.title}
-- Description: {issue.body}
-
-Compare the implementation against these requirements.
-"""
-    
-    return f"""You are an expert code reviewer. Analyze the pull request and provide a structured review decision.
-
-## Pull Request Review
-
-**Title:** {pr_title}
-**Iteration:** {iteration}/{max_iterations}
-
-### PR Description
-{pr_body}
-
-{issue_context}
-
-### {ci_status}
-
-### Code Changes
-{diff_summary}
-
-## Your Task
-
-Review this pull request and determine if it should be approved or if changes are needed.
-
-Consider:
-1. Does the implementation match the issue requirements?
-2. Are there any bugs, errors, or code quality issues?
-3. Are CI checks passing?
-4. Is the code well-structured and maintainable?
-
-If this is iteration {max_iterations}/{max_iterations}, you should approve with warnings rather than requesting more changes.
-
-Use the search_codebase tool if you need additional context from the repository.
-
-Provide your decision with:
-- status: "APPROVED" or "CHANGES_REQUESTED"
-- summary: Brief overall assessment
-- issues: List of specific issues found (empty if approved)
-- suggestions: Optional improvements that don't block approval
-"""
-
-
 def _build_reviewer_agent(
     pr_title: str,
     pr_body: str,
@@ -347,12 +289,14 @@ def _build_reviewer_agent(
     max_iterations: int,
 ) -> Agent[AgentContext]:
     """Build the reviewer agent with dynamic instructions."""
-    instructions = _build_reviewer_instructions(
+    instructions = build_reviewer_instructions(
         pr_title=pr_title,
         pr_body=pr_body,
         diff_summary=diff_summary,
         ci_status=ci_status,
-        issue=issue,
+        issue_number=issue.number if issue else None,
+        issue_title=issue.title if issue else None,
+        issue_body=issue.body if issue else None,
         iteration=iteration,
         max_iterations=max_iterations,
     )
