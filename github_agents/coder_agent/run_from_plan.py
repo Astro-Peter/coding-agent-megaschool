@@ -32,6 +32,18 @@ from github_agents.coder_agent.agent import (
     _update_iteration_count,
     run_coder_agent_async,
 )
+from github_agents.coder_agent.messages import (
+    comment_branch_creation_failed,
+    comment_clone_failed,
+    comment_max_iterations_reached,
+    comment_no_changes,
+    comment_no_plan_found,
+    comment_pr_created,
+    comment_pr_creation_failed,
+    comment_push_failed,
+    comment_push_success,
+    comment_starting_implementation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +73,7 @@ async def run_coder_async(*, context: AgentContext) -> None:
     plan = _load_latest_plan(comments)
 
     if not plan:
-        client.comment_issue(
-            issue.number,
-            "\n".join([
-                "🧩 **Coder Agent could not find a plan.**",
-                "",
-                f"- Issue: {issue.url}",
-                "Please ensure the Planner Agent has created a plan first.",
-            ]),
-        )
+        comment_no_plan_found(client, issue.number, issue.url)
         return
 
     # Get and update iteration count
@@ -77,17 +81,8 @@ async def run_coder_async(*, context: AgentContext) -> None:
     new_iteration = current_iteration + 1
     
     if new_iteration > MAX_DEV_ITERATIONS:
-        client.comment_issue(
-            issue.number,
-            "\n".join([
-                "🧩 **Coder Agent: Maximum iterations reached.**",
-                "",
-                f"- Issue: {issue.url}",
-                f"- Iterations: {current_iteration}/{MAX_DEV_ITERATIONS}",
-                "",
-                "The maximum number of development iterations has been reached.",
-                "Please review the existing PR manually or close the issue.",
-            ]),
+        comment_max_iterations_reached(
+            client, issue.number, issue.url, (current_iteration, MAX_DEV_ITERATIONS)
         )
         return
     
@@ -115,18 +110,13 @@ async def run_coder_async(*, context: AgentContext) -> None:
         clone_url = client.get_clone_url()
         token = os.getenv("GH_TOKEN", "")
 
-        iteration_msg = f" (iteration {new_iteration}/{MAX_DEV_ITERATIONS})"
-        if is_update:
-            client.comment_issue(
-                issue.number,
-                f"🧩 **Coder Agent continuing implementation{iteration_msg}...**\n\n"
-                f"Updating existing branch `{existing_branch}`...",
-            )
-        else:
-            client.comment_issue(
-                issue.number,
-                f"🧩 **Coder Agent starting implementation{iteration_msg}...**\n\nCloning repository...",
-            )
+        comment_starting_implementation(
+            client,
+            issue.number,
+            (new_iteration, MAX_DEV_ITERATIONS),
+            is_update=is_update,
+            branch=existing_branch,
+        )
 
         # Handle branching - clone with the appropriate branch
         if is_update and existing_branch:
@@ -135,42 +125,28 @@ async def run_coder_async(*, context: AgentContext) -> None:
             if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
                 # In CI fix mode, don't fall back to creating a new branch
                 if is_ci_fix_mode:
-                    client.comment_issue(
-                        issue.number,
-                        f"🧩 **Coder Agent failed to clone existing branch `{branch_name}`.**\n\n"
-                        "Cannot proceed with CI fix mode without the existing PR branch.",
+                    comment_clone_failed(
+                        client, issue.number, branch=branch_name, is_ci_fix_mode=True
                     )
                     return
                 # Normal mode: fall back to cloning default branch and creating new branch
                 if not _clone_repository(clone_url, token, clone_path):
-                    client.comment_issue(
-                        issue.number,
-                        "🧩 **Coder Agent failed to clone repository.**\n\nPlease check the logs.",
-                    )
+                    comment_clone_failed(client, issue.number)
                     return
                 random_suffix = secrets.token_hex(4)
                 branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
                 if not _git_create_branch(clone_path, branch_name):
-                    client.comment_issue(
-                        issue.number,
-                        f"🧩 **Coder Agent failed to create branch `{branch_name}`.**",
-                    )
+                    comment_branch_creation_failed(client, issue.number, branch_name)
                     return
                 is_update = False
         else:
             if not _clone_repository(clone_url, token, clone_path):
-                client.comment_issue(
-                    issue.number,
-                    "🧩 **Coder Agent failed to clone repository.**\n\nPlease check the logs.",
-                )
+                comment_clone_failed(client, issue.number)
                 return
             random_suffix = secrets.token_hex(4)
             branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
             if not _git_create_branch(clone_path, branch_name):
-                client.comment_issue(
-                    issue.number,
-                    f"🧩 **Coder Agent failed to create branch `{branch_name}`.**",
-                )
+                comment_branch_creation_failed(client, issue.number, branch_name)
                 return
 
         # Set up context for tools
@@ -190,19 +166,14 @@ async def run_coder_async(*, context: AgentContext) -> None:
         if has_changes:
             if _git_push(clone_path, branch_name):
                 if is_update:
-                    client.comment_issue(
+                    comment_push_success(
+                        client,
                         issue.number,
-                        "\n".join([
-                            f"🧩 **Coder Agent pushed fixes (iteration {new_iteration}/{MAX_DEV_ITERATIONS}).**",
-                            "",
-                            f"- Issue: {issue.url}",
-                            f"- Branch: `{branch_name}`",
-                            "",
-                            "### Changes Made",
-                            summary,
-                            "",
-                            "The PR has been updated. Reviewer will analyze the changes.",
-                        ]),
+                        issue_url=issue.url,
+                        branch=branch_name,
+                        iteration=(new_iteration, MAX_DEV_ITERATIONS),
+                        summary=summary,
+                        is_update=True,
                     )
                 else:
                     pr_title = f"[Coder Agent] {issue.title}"
@@ -229,40 +200,26 @@ This PR was automatically generated by the Coder Agent to address #{issue.number
                             body=pr_body,
                             head=branch_name,
                         )
-                        client.comment_issue(
+                        comment_pr_created(
+                            client,
                             issue.number,
-                            "\n".join([
-                                f"🧩 **Coder Agent completed implementation (iteration {new_iteration}/{MAX_DEV_ITERATIONS}).**",
-                                "",
-                                f"- Issue: {issue.url}",
-                                f"- Pull Request: {pr.url}",
-                                "",
-                                "### Summary",
-                                summary,
-                            ]),
+                            issue_url=issue.url,
+                            pr_url=pr.url,
+                            iteration=(new_iteration, MAX_DEV_ITERATIONS),
+                            summary=summary,
                         )
                     except Exception as exc:
                         logger.exception("Failed to create PR: %s", exc)
-                        client.comment_issue(
-                            issue.number,
-                            f"🧩 **Coder Agent pushed changes but failed to create PR.**\n\nBranch: `{branch_name}`\nError: {exc}",
-                        )
+                        comment_pr_creation_failed(client, issue.number, branch_name, exc)
             else:
-                client.comment_issue(
-                    issue.number,
-                    f"🧩 **Coder Agent failed to push changes.**\n\nBranch: `{branch_name}`",
-                )
+                comment_push_failed(client, issue.number, branch_name)
         else:
-            client.comment_issue(
+            comment_no_changes(
+                client,
                 issue.number,
-                "\n".join([
-                    f"🧩 **Coder Agent completed but made no changes (iteration {new_iteration}/{MAX_DEV_ITERATIONS}).**",
-                    "",
-                    f"- Issue: {issue.url}",
-                    "",
-                    "### Summary",
-                    summary,
-                ]),
+                issue_url=issue.url,
+                iteration=(new_iteration, MAX_DEV_ITERATIONS),
+                summary=summary,
             )
 
     finally:
