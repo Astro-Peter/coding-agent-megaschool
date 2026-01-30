@@ -20,7 +20,6 @@ from github_agents.common.sdk_config import configure_sdk
 from github_agents.coder_agent.agent import (
     MAX_DEV_ITERATIONS,
     _clone_repository,
-    _git_checkout_existing_branch,
     _git_commit,
     _git_push,
     _load_latest_ci_feedback,
@@ -84,13 +83,9 @@ async def run_coder_from_pr_async(*, context: AgentContext) -> None:
 
         logger.info("Coder Agent working on PR #%d, branch %s", pr_number, branch_name)
 
-        if not _clone_repository(clone_url, token, clone_path):
+        # Clone directly with the PR branch
+        if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
             logger.error("Failed to clone repository for PR #%d", pr_number)
-            return
-
-        # Checkout the existing PR branch
-        if not _git_checkout_existing_branch(clone_path, branch_name):
-            logger.error("Failed to checkout branch %s for PR #%d", branch_name, pr_number)
             return
 
         # Set up context for tools

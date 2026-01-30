@@ -24,7 +24,6 @@ from github_agents.coder_agent.agent import (
     _clone_repository,
     _find_existing_branch,
     _get_iteration_count,
-    _git_checkout_existing_branch,
     _git_commit,
     _git_create_branch,
     _git_push,
@@ -129,26 +128,26 @@ async def run_coder_async(*, context: AgentContext) -> None:
                 f"🧩 **Coder Agent starting implementation{iteration_msg}...**\n\nCloning repository...",
             )
 
-        if not _clone_repository(clone_url, token, clone_path):
-            client.comment_issue(
-                issue.number,
-                "🧩 **Coder Agent failed to clone repository.**\n\nPlease check the logs.",
-            )
-            return
-
-        # Handle branching
+        # Handle branching - clone with the appropriate branch
         if is_update and existing_branch:
             branch_name = existing_branch
-            if not _git_checkout_existing_branch(clone_path, branch_name):
+            # Clone directly with the existing branch
+            if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
                 # In CI fix mode, don't fall back to creating a new branch
                 if is_ci_fix_mode:
                     client.comment_issue(
                         issue.number,
-                        f"🧩 **Coder Agent failed to checkout existing branch `{branch_name}`.**\n\n"
+                        f"🧩 **Coder Agent failed to clone existing branch `{branch_name}`.**\n\n"
                         "Cannot proceed with CI fix mode without the existing PR branch.",
                     )
                     return
-                # Normal mode: fall back to creating a new branch
+                # Normal mode: fall back to cloning default branch and creating new branch
+                if not _clone_repository(clone_url, token, clone_path):
+                    client.comment_issue(
+                        issue.number,
+                        "🧩 **Coder Agent failed to clone repository.**\n\nPlease check the logs.",
+                    )
+                    return
                 random_suffix = secrets.token_hex(4)
                 branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
                 if not _git_create_branch(clone_path, branch_name):
@@ -159,6 +158,12 @@ async def run_coder_async(*, context: AgentContext) -> None:
                     return
                 is_update = False
         else:
+            if not _clone_repository(clone_url, token, clone_path):
+                client.comment_issue(
+                    issue.number,
+                    "🧩 **Coder Agent failed to clone repository.**\n\nPlease check the logs.",
+                )
+                return
             random_suffix = secrets.token_hex(4)
             branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
             if not _git_create_branch(clone_path, branch_name):

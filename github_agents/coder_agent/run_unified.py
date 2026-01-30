@@ -20,7 +20,6 @@ from github_agents.coder_agent.agent import (
     MAX_DEV_ITERATIONS,
     _clone_repository,
     _find_existing_branch,
-    _git_checkout_existing_branch,
     _git_commit,
     _git_create_branch,
     _git_push,
@@ -118,13 +117,9 @@ async def _run_coder_pr_comments_mode(
 
         logger.info("Coder Agent working on PR #%d, branch %s (PR comments mode)", pr_number, branch_name)
 
-        if not _clone_repository(clone_url, token, clone_path):
+        # Clone directly with the PR branch
+        if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
             logger.error("Failed to clone repository for PR #%d", pr_number)
-            return
-
-        # Checkout the existing PR branch
-        if not _git_checkout_existing_branch(clone_path, branch_name):
-            logger.error("Failed to checkout branch %s for PR #%d", branch_name, pr_number)
             return
 
         # Set up context for tools
@@ -210,16 +205,17 @@ async def _run_coder_plan_mode(
 
         logger.info("Coder Agent working on issue #%d (plan mode)", issue_number)
 
-        if not _clone_repository(clone_url, token, clone_path):
-            logger.error("Failed to clone repository for issue #%d", issue_number)
-            return
-
         # Handle branching
         if is_update and existing_branch:
             branch_name = existing_branch
-            if not _git_checkout_existing_branch(clone_path, branch_name):
+            # Clone directly with the existing branch
+            if not _clone_repository(clone_url, token, clone_path, branch=branch_name):
                 if is_ci_fix_mode:
-                    logger.error("Failed to checkout existing branch %s in CI fix mode", branch_name)
+                    logger.error("Failed to clone existing branch %s in CI fix mode", branch_name)
+                    return
+                # Fall back to cloning default branch and creating new branch
+                if not _clone_repository(clone_url, token, clone_path):
+                    logger.error("Failed to clone repository for issue #%d", issue_number)
                     return
                 random_suffix = secrets.token_hex(4)
                 branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
@@ -228,6 +224,9 @@ async def _run_coder_plan_mode(
                     return
                 is_update = False
         else:
+            if not _clone_repository(clone_url, token, clone_path):
+                logger.error("Failed to clone repository for issue #%d", issue_number)
+                return
             random_suffix = secrets.token_hex(4)
             branch_name = f"coder-agent/issue-{issue.number}-{random_suffix}"
             if not _git_create_branch(clone_path, branch_name):

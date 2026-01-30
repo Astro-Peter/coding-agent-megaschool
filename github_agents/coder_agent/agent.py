@@ -159,16 +159,28 @@ def _find_existing_branch(client: GitHubClient, issue_number: int) -> str | None
 
 # --- Git Operations ---
 
-def _clone_repository(clone_url: str, token: str, dest: Path) -> bool:
-    """Clone the repository to dest directory."""
+def _clone_repository(clone_url: str, token: str, dest: Path, *, branch: str | None = None) -> bool:
+    """Clone the repository to dest directory.
+    
+    Args:
+        clone_url: The repository clone URL.
+        token: GitHub access token.
+        dest: Destination directory.
+        branch: Optional branch to clone. If provided, clones that specific branch.
+    """
     if clone_url.startswith("https://"):
         authed_url = clone_url.replace("https://", f"https://x-access-token:{token}@")
     else:
         authed_url = clone_url
 
     try:
+        cmd = ["git", "clone", "--depth", "1"]
+        if branch:
+            cmd.extend(["--branch", branch])
+        cmd.extend([authed_url, str(dest)])
+        
         subprocess.run(
-            ["git", "clone", "--depth", "1", authed_url, str(dest)],
+            cmd,
             check=True,
             capture_output=True,
             text=True,
