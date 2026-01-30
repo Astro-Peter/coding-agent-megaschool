@@ -12,14 +12,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from agents import Agent, Runner
+from agents import Agent, RunConfig, Runner
 from agents.agent import StopAtTools
 
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_issue_number, load_config
 from github_agents.common.context import AgentContext
 from github_agents.common.github_client import GitHubClient, IssueCommentData, IssueData
-from github_agents.common.sdk_config import configure_sdk
+from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_coder_tools
 from github_agents.planner_agent.agent import PLAN_MARKER
 
@@ -304,11 +304,14 @@ async def run_coder_agent_async(
     agent = _build_coder_agent(issue, plan, context)
     
     try:
+        # Use LiteLLM model via RunConfig
+        run_config = RunConfig(model=get_model_name())
         result = await Runner.run(
             agent,
             "Please implement the changes according to the plan. Start by exploring the codebase structure.",
             context=context,
             max_turns=MAX_AGENT_ITERATIONS,
+            run_config=run_config,
         )
         
         # Extract the summary from the mark_complete tool output

@@ -11,13 +11,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents import Agent, Runner
+from agents import Agent, RunConfig, Runner
 
 from github_agents.common.code_index import CodeIndex
 from github_agents.common.config import get_pr_number, load_config
 from github_agents.common.context import AgentContext
 from github_agents.common.github_client import CheckRunData, GitHubClient, IssueData
-from github_agents.common.sdk_config import configure_sdk
+from github_agents.common.sdk_config import configure_sdk, get_model_name
 from github_agents.common.tools import get_reviewer_tools
 
 logger = logging.getLogger(__name__)
@@ -387,11 +387,14 @@ async def run_reviewer_agent_async(
     )
     
     try:
+        # Use LiteLLM model via RunConfig
+        run_config = RunConfig(model=get_model_name())
         result = await Runner.run(
             agent,
             "Please review this pull request and provide your decision.",
             context=context,
             max_turns=10,
+            run_config=run_config,
         )
         return result.final_output_as(ReviewDecision)
     except Exception as exc:

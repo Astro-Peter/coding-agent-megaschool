@@ -3,28 +3,45 @@ from __future__ import annotations
 
 import os
 
-from openai import AsyncOpenAI
 
-
-def configure_sdk(api_token: str | None = None, api_url: str | None = None) -> None:
-    """Configure OpenAI Agents SDK for OpenRouter or other OpenAI-compatible providers.
+def configure_sdk() -> None:
+    """Configure OpenAI Agents SDK for OpenRouter via LiteLLM.
     
-    Args:
-        api_token: API token for the LLM provider. Defaults to LLM_API_TOKEN env var.
-        api_url: Base URL for the API. Defaults to LLM_API_URL env var or OpenRouter.
+    This uses LiteLLM integration which has better compatibility with
+    OpenRouter and other non-OpenAI providers.
+    
+    Required environment variables:
+    - LLM_API_TOKEN: Your OpenRouter API key
+    
+    Optional environment variables:
+    - LLM_MODEL: Model to use (default: openrouter/openai/gpt-4o-mini)
     """
-    # Import here to avoid circular imports and allow lazy loading
-    from agents import set_default_openai_api, set_default_openai_client
+    from agents import set_tracing_disabled
 
-    token = api_token or os.getenv("LLM_API_TOKEN")
-    if not token:
-        raise ValueError("LLM_API_TOKEN is required")
+    # Disable tracing since we're not using OpenAI directly
+    set_tracing_disabled(True)
     
-    url = api_url or os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1")
+    # Set the OpenRouter API key for LiteLLM
+    # LiteLLM uses OPENROUTER_API_KEY environment variable
+    token = os.getenv("LLM_API_TOKEN")
+    if token and not os.getenv("OPENROUTER_API_KEY"):
+        os.environ["OPENROUTER_API_KEY"] = token
+
+
+def get_model_name() -> str:
+    """Get the LiteLLM model name for OpenRouter.
     
-    client = AsyncOpenAI(
-        api_key=token,
-        base_url=url,
-    )
-    set_default_openai_client(client, use_for_tracing=False)
-    set_default_openai_api("chat_completions")
+    Returns a model name with the litellm/ prefix for use with the SDK.
+    """
+    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    
+    # If already has litellm/ prefix, use as-is
+    if model.startswith("litellm/"):
+        return model
+    
+    # If already has openrouter/ prefix, add litellm/
+    if model.startswith("openrouter/"):
+        return f"litellm/{model}"
+    
+    # Otherwise, add full litellm/openrouter/ prefix
+    return f"litellm/openrouter/{model}"

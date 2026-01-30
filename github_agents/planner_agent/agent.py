@@ -8,11 +8,11 @@ import os
 
 from pydantic import BaseModel
 
-from agents import Agent, Runner
+from agents import Agent, RunConfig, Runner
 
 from github_agents.common.config import get_issue_number, load_config
 from github_agents.common.context import AgentContext
-from github_agents.common.sdk_config import configure_sdk
+from github_agents.common.sdk_config import configure_sdk, get_model_name, get_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,12 @@ class Plan(BaseModel):
     steps: list[str]
 
 
-# Define the planner agent
-planner_agent: Agent[AgentContext] = Agent(
-    name="Planner",
-    instructions="""You are a planning assistant for a multi-agent GitHub workflow.
+def _create_planner_agent() -> Agent[AgentContext]:
+    """Create the planner agent with the configured model."""
+    return Agent[AgentContext](
+        name="Planner",
+        model=get_model_name(),
+        instructions="""You are a planning assistant for a multi-agent GitHub workflow.
 
 Your task is to analyze GitHub issues and create implementation plans.
 
@@ -41,8 +43,8 @@ Guidelines:
 Return a structured plan with:
 - summary: A brief description of what will be implemented
 - steps: An array of 3-6 specific implementation steps""",
-    output_type=Plan,
-)
+        output_type=Plan,
+    )
 
 
 async def build_plan_async(
@@ -69,10 +71,13 @@ Issue body:
 {issue_body}"""
     
     try:
+        # Use LiteLLM model via RunConfig
+        run_config = RunConfig(model=get_model_name())
         result = await Runner.run(
             planner_agent,
             prompt,
             context=context,
+            run_config=run_config,
         )
         return result.final_output_as(Plan)
     except Exception as exc:
