@@ -210,6 +210,79 @@ def _parse_review_response(response: str) -> dict:
     }
 
 
+def _format_review_body(decision: ReviewDecision) -> str:
+    """Format the PR review body (for the formal review, not the comment)."""
+    lines = [
+        f"## AI Reviewer Agent - {decision.status}",
+        "",
+        f"**Iteration:** {decision.iteration}/{decision.max_iterations}",
+        "",
+        "### Summary",
+        decision.summary,
+        "",
+    ]
+    
+    if decision.issues:
+        lines.extend([
+            "### Issues",
+            *[f"- {issue}" for issue in decision.issues],
+            "",
+        ])
+    
+    if decision.status == "APPROVED":
+        lines.append("This PR is ready for merge.")
+    else:
+        lines.append("Please address the issues above before this PR can be approved.")
+    
+    return "\n".join(lines)
+
+
+def _write_actions_summary(decision: ReviewDecision, pr_url: str, branch: str) -> None:
+    """Write review summary to GitHub Actions summary file."""
+    summary_file = os.getenv("GITHUB_STEP_SUMMARY")
+    if not summary_file:
+        logger.debug("GITHUB_STEP_SUMMARY not set, skipping Actions summary")
+        return
+    
+    status_emoji = "✅" if decision.status == "APPROVED" else "🔄"
+    
+    lines = [
+        f"# {status_emoji} AI Reviewer Agent Report",
+        "",
+        f"| Property | Value |",
+        f"|----------|-------|",
+        f"| **Status** | `{decision.status}` |",
+        f"| **Iteration** | {decision.iteration}/{decision.max_iterations} |",
+        f"| **PR** | {pr_url} |",
+        f"| **Branch** | `{branch}` |",
+        "",
+        "## Summary",
+        "",
+        decision.summary,
+        "",
+    ]
+    
+    if decision.issues:
+        lines.extend([
+            "## Issues Found",
+            "",
+            *[f"- {issue}" for issue in decision.issues],
+            "",
+        ])
+    
+    if decision.status == "APPROVED":
+        lines.append("**This PR is ready for human review and merge.**")
+    else:
+        lines.append("**Next Steps:** The Coder Agent will automatically attempt to fix these issues.")
+    
+    try:
+        with open(summary_file, "a") as f:
+            f.write("\n".join(lines) + "\n")
+        logger.info("Wrote review summary to GitHub Actions summary")
+    except Exception as e:
+        logger.warning("Failed to write Actions summary: %s", e)
+
+
 def _format_review_comment(decision: ReviewDecision, pr_url: str, branch: str) -> str:
     """Format the review as a GitHub comment with machine-readable section."""
     status_emoji = "✅" if decision.status == "APPROVED" else "🔄"
@@ -415,9 +488,21 @@ def run_reviewer(
         max_iterations=MAX_ITERATIONS,
     )
     
-    # Post the review comment
+    # Post the review comment (for machine-readable feedback)
     comment = _format_review_comment(decision, pr.url, pr.head_ref)
     client.comment_pull_request(pr.number, comment)
+    
+    # Post a proper PR review (APPROVE or REQUEST_CHANGES)
+    review_body = _format_review_body(decision)
+    review_event = "APPROVE" if decision.status == "APPROVED" else "REQUEST_CHANGES"
+    try:
+        client.create_pull_request_review(pr.number, body=review_body, event=review_event)
+        logger.info("Posted PR review with event: %s", review_event)
+    except Exception as e:
+        logger.warning("Failed to post PR review: %s", e)
+    
+    # Write to GitHub Actions summary if running in Actions
+    _write_actions_summary(decision, pr.url, pr.head_ref)
     
     logger.info("Review completed: %s", decision.status)
     return decision

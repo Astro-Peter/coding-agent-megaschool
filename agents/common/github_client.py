@@ -252,3 +252,20 @@ class GitHubClient:
             updated_at=pr.updated_at,
             head_sha=pr.head.sha,
         )
+
+    def create_pull_request_review(
+        self,
+        pr_number: int,
+        *,
+        body: str,
+        event: str,
+    ) -> None:
+        """Create a pull request review.
+        
+        Args:
+            pr_number: The pull request number.
+            body: The review body/summary.
+            event: One of "APPROVE", "REQUEST_CHANGES", or "COMMENT".
+        """
+        pr = self._repo.get_pull(pr_number)
+        pr.create_review(body=body, event=event)

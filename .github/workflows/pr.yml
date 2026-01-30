@@ -3,17 +3,26 @@ name: PR Review Agent
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # Also trigger when CI checks complete to get their results
+  workflow_run:
+    workflows: ["CI Quality Checks"]
+    types: [completed]
 
 jobs:
   review:
     name: Run Reviewer Agent
     runs-on: ubuntu-latest
+    # Only run on PR events or when CI workflow completed for a PR
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request')
     permissions:
       contents: read
       pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # For workflow_run, we need to checkout the PR's head
+          ref: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,11 +32,25 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
+      - name: Get PR number for workflow_run
+        id: pr_number
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            # For workflow_run, we need to find the PR number from the head SHA
+            PR_NUMBER=$(gh pr list --head "${{ github.event.workflow_run.head_branch }}" --json number --jq '.[0].number')
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Reviewer Agent
+        if: steps.pr_number.outputs.pr_number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.pr_number.outputs.pr_number }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://api.openai.com/v1' }}
