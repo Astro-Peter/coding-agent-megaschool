@@ -1,5 +1,8 @@
 # Copy this file to .github/workflows/sdlc-reviewer.yml in your repository
-# This workflow runs the reviewer when a PR is opened or updated
+# This workflow runs the reviewer when:
+#   - The "agent-review" label is added (typically by CI Monitor after checks pass)
+#   - Manually triggered via workflow_dispatch
+#
 # If changes are requested, it automatically triggers the coder to fix them
 #
 # Required secrets:
@@ -9,14 +12,25 @@
 name: SDLC Reviewer
 
 on:
+  # Trigger when agent-review label is added (by CI Monitor workflow)
   pull_request:
-    types: [opened, synchronize, ready_for_review]
+    types: [labeled]
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
 
 jobs:
-  review_after_checks:
-    name: Review (after CI)
-    # Skip draft PRs
-    if: github.event.pull_request.draft == false
+  review_pr:
+    name: Review PR
+    # Only run when agent-review label is added, or on manual trigger
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.label.name == 'agent-review' && github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     outputs:
       status: ${{ steps.review.outputs.status }}
@@ -25,25 +39,24 @@ jobs:
       - name: Get PR number
         id: pr
         run: |
-          echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Wait for CI checks to complete
+      - name: Remove agent-review label
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          echo "Waiting for CI checks to complete..."
-          # Wait up to 10 minutes for checks, polling every 30 seconds
-          # Exclude this workflow ("SDLC Reviewer") from the check
-          for i in {1..20}; do
-            STATUS=$(gh pr checks ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json name,state --jq '[.[] | select(.name != "Review (after CI)" and .name != "Fix Issues (auto)")] | map(.state) | if length == 0 then "none" elif all(. == "SUCCESS" or . == "SKIPPED") then "success" elif any(. == "PENDING" or . == "QUEUED" or . == "IN_PROGRESS") then "pending" else "failure" end' 2>/dev/null || echo "none")
-            echo "Check status: $STATUS"
-            if [ "$STATUS" = "success" ] || [ "$STATUS" = "failure" ] || [ "$STATUS" = "none" ]; then
-              echo "CI checks finished with status: $STATUS"
-              break
-            fi
-            echo "Checks still pending, waiting 30s..."
-            sleep 30
-          done
+          # Remove the label so it can be re-added if CI runs again
+          gh pr edit ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --remove-label "agent-review" 2>/dev/null || true
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || '' }}
+          path: repo
 
       - name: Checkout agent code
         uses: actions/checkout@v4
@@ -61,7 +74,7 @@ jobs:
 
       - name: Run Reviewer Agent
         id: review
-        working-directory: agent
+        working-directory: repo
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -69,6 +82,7 @@ jobs:
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}/repo
         run: python -m github_agents.reviewer_agent.agent
 
       - name: Get linked issue number
@@ -83,10 +97,15 @@ jobs:
   # Trigger coder to fix issues if review requested changes
   fix_after_review:
     name: Fix Issues (auto)
-    needs: review_after_checks
-    if: needs.review_after_checks.outputs.status == 'CHANGES_REQUESTED' && needs.review_after_checks.outputs.issue_number != ''
+    needs: review_pr
+    if: needs.review_pr.outputs.status == 'CHANGES_REQUESTED' && needs.review_pr.outputs.issue_number != ''
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
       - name: Checkout agent code
         uses: actions/checkout@v4
         with:
@@ -102,12 +121,13 @@ jobs:
         run: pip install -e ./agent
 
       - name: Run Coder Agent to fix issues
-        working-directory: agent
+        working-directory: repo
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ needs.review_after_checks.outputs.issue_number }}
+          ISSUE_NUMBER: ${{ needs.review_pr.outputs.issue_number }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}/repo
         run: python -m github_agents.coder_agent.agent

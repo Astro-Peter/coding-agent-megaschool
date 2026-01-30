@@ -1,0 +1,213 @@
+# Copy this file to .github/workflows/sdlc-ci-fixer.yml in your repository
+# This workflow monitors CI check completion:
+#   - On failure: Analyzes errors, posts fix suggestions, and triggers Coder to fix
+#   - On success: Adds "agent-review" label to trigger the reviewer agent
+#
+# Triggers:
+#   - When a check_suite completes (success or failure)
+#   - When a workflow_run completes (success or failure)
+#
+# Required secrets:
+#   - GH_TOKEN: GitHub Personal Access Token with repo scope
+#   - LLM_API_TOKEN: Your LLM API key
+
+name: CI Monitor
+
+on:
+  # Trigger when any check suite completes
+  check_suite:
+    types: [completed]
+  
+  # Also trigger on workflow run completion (catches more CI systems)
+  workflow_run:
+    types: [completed]
+
+jobs:
+  # When CI fails, analyze and post suggestions
+  analyze_failures:
+    name: Analyze CI Failures
+    if: >
+      (github.event.check_suite.conclusion == 'failure' || 
+       github.event.workflow_run.conclusion == 'failure') &&
+      (github.event.check_suite.pull_requests[0] != null ||
+       github.event.workflow_run.pull_requests[0] != null)
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      issue_number: ${{ steps.issue.outputs.number }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+    steps:
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "check_suite" ]; then
+            PR_NUMBER="${{ github.event.check_suite.pull_requests[0].number }}"
+            HEAD_SHA="${{ github.event.check_suite.head_sha }}"
+          else
+            PR_NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          fi
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "Analyzing failures for PR #$PR_NUMBER"
+          
+          # Get the head branch ref
+          HEAD_REF=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json headRefName --jq '.headRefName')
+          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+
+      - name: Remove agent-review label if present
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          gh pr edit ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --remove-label "agent-review" 2>/dev/null || true
+
+      - name: Get linked issue number
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Get PR body and extract issue number
+          ISSUE_NUM=$(gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --json body --jq '.body' | grep -oP '#\K\d+' | head -1)
+          echo "number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          echo "Linked issue: #$ISSUE_NUM"
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          path: repo
+
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/coding-agent-megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Run CI Fixer Agent
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}/repo
+        run: python -m github_agents.ci_fixer_agent.agent
+
+  # After analysis, trigger coder to fix the issues
+  fix_ci_failures:
+    name: Fix CI Failures (auto)
+    needs: analyze_failures
+    # Only run if we have a linked issue number
+    if: needs.analyze_failures.outputs.issue_number != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze_failures.outputs.head_ref }}
+          fetch-depth: 0
+          path: repo
+
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/coding-agent-megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Configure Git
+        working-directory: repo
+        run: |
+          git config user.name "CI Fixer Bot"
+          git config user.email "ci-fixer-bot@users.noreply.github.com"
+
+      - name: Run Coder Agent to fix CI issues
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.analyze_failures.outputs.issue_number }}
+          PR_NUMBER: ${{ needs.analyze_failures.outputs.pr_number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}/repo
+          # Signal to coder that this is a CI fix context
+          CI_FIX_MODE: "true"
+        run: python -m github_agents.coder_agent.agent
+
+  # When CI passes, add label to trigger reviewer
+  trigger_review:
+    name: Trigger Review
+    if: >
+      (github.event.check_suite.conclusion == 'success' || 
+       github.event.workflow_run.conclusion == 'success') &&
+      (github.event.check_suite.pull_requests[0] != null ||
+       github.event.workflow_run.pull_requests[0] != null)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "check_suite" ]; then
+            PR_NUMBER="${{ github.event.check_suite.pull_requests[0].number }}"
+          else
+            PR_NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+          fi
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          
+          # Check if PR is a draft
+          IS_DRAFT=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json isDraft --jq '.isDraft')
+          echo "is_draft=$IS_DRAFT" >> $GITHUB_OUTPUT
+
+      - name: Wait for all checks to complete
+        if: steps.pr.outputs.is_draft == 'false'
+        id: checks
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "Verifying all CI checks have completed..."
+          # Wait a bit to ensure all checks are registered
+          sleep 10
+          
+          # Check if ALL checks (excluding our own workflows) have passed
+          STATUS=$(gh pr checks ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --json name,state --jq '[.[] | select(.name != "Trigger Review" and .name != "Analyze CI Failures" and .name != "Fix CI Failures (auto)" and .name != "Review PR" and .name != "Fix Issues (auto)")] | map(.state) | if length == 0 then "none" elif all(. == "SUCCESS" or . == "SKIPPED") then "success" elif any(. == "PENDING" or . == "QUEUED" or . == "IN_PROGRESS") then "pending" else "failure" end' 2>/dev/null || echo "none")
+          
+          echo "Overall check status: $STATUS"
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Add agent-review label
+        if: steps.pr.outputs.is_draft == 'false' && steps.checks.outputs.status == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "All CI checks passed! Adding agent-review label to trigger reviewer..."
+          
+          # Create the label if it doesn't exist
+          gh label create "agent-review" --repo ${{ github.repository }} --description "Ready for AI agent review" --color "0E8A16" 2>/dev/null || true
+          
+          # Add the label to the PR
+          gh pr edit ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --add-label "agent-review"
+          
+          echo "✅ Label added. Reviewer agent will be triggered."

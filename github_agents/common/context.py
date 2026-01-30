@@ -30,3 +30,5 @@ class AgentContext:
     iteration: int = 1
     max_iterations: int = 5
     reviewer_feedback: list[str] = field(default_factory=list)
+    ci_feedback: list[str] = field(default_factory=list)
+    is_ci_fix_mode: bool = False

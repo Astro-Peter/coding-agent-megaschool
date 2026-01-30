@@ -137,7 +137,7 @@ def write_file(ctx: RunContextWrapper[AgentContext], path: str, content: str) ->
 
 @function_tool
 def append_file(ctx: RunContextWrapper[AgentContext], path: str, content: str) -> dict[str, Any]:
-    """Append content to the end of a file.
+    """Append content to the end of a file. Appends from a new line.
     
     Args:
         path: Relative path to the file.
@@ -306,3 +306,13 @@ def get_coder_tools() -> list:
 def get_reviewer_tools() -> list:
     """Get tools for the reviewer agent."""
     return [search_codebase]
+
+
+def get_ci_fixer_tools() -> list:
+    """Get tools for the CI fixer agent (read-only analysis)."""
+    return [
+        get_workdir,
+        list_dir,
+        read_file,
+        search_codebase,
+    ]

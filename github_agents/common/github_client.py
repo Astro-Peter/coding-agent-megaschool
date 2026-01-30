@@ -46,6 +46,17 @@ class PullRequestFileData:
 
 
 @dataclass
+class CheckRunAnnotation:
+    """Annotation from a check run (usually a linter/test error)."""
+    path: str
+    start_line: int
+    end_line: int
+    annotation_level: str  # notice, warning, failure
+    message: str
+    title: str | None = None
+
+
+@dataclass
 class CheckRunData:
     id: int
     name: str
@@ -54,6 +65,9 @@ class CheckRunData:
     started_at: datetime | None
     completed_at: datetime | None
     html_url: str
+    output_title: str | None = None
+    output_summary: str | None = None
+    annotations: list[CheckRunAnnotation] | None = None
 
 
 class GitHubClient:
@@ -168,6 +182,58 @@ class GitHubClient:
                 )
             )
         return check_runs
+
+    def get_check_runs_with_details(self, pr_number: int) -> list[CheckRunData]:
+        """Get check runs with detailed output and annotations for a pull request."""
+        pr = self._repo.get_pull(pr_number)
+        commit = self._repo.get_commit(pr.head.sha)
+        check_runs = []
+        for check in commit.get_check_runs():
+            # Get annotations if available
+            annotations = []
+            try:
+                for ann in check.get_annotations():
+                    annotations.append(
+                        CheckRunAnnotation(
+                            path=ann.path,
+                            start_line=ann.start_line,
+                            end_line=ann.end_line,
+                            annotation_level=ann.annotation_level,
+                            message=ann.message,
+                            title=ann.title,
+                        )
+                    )
+            except Exception:
+                pass  # Some check runs may not have annotations
+            
+            check_runs.append(
+                CheckRunData(
+                    id=check.id,
+                    name=check.name,
+                    status=check.status,
+                    conclusion=check.conclusion,
+                    started_at=check.started_at,
+                    completed_at=check.completed_at,
+                    html_url=check.html_url,
+                    output_title=check.output.title if check.output else None,
+                    output_summary=check.output.summary if check.output else None,
+                    annotations=annotations if annotations else None,
+                )
+            )
+        return check_runs
+
+    def get_workflow_run_logs_url(self, run_id: int) -> str:
+        """Get the URL to download workflow run logs."""
+        return f"https://api.github.com/repos/{self._repo.full_name}/actions/runs/{run_id}/logs"
+
+    def get_failed_check_runs(self, pr_number: int) -> list[CheckRunData]:
+        """Get only the failed check runs for a pull request with details."""
+        all_checks = self.get_check_runs_with_details(pr_number)
+        return [
+            check for check in all_checks
+            if check.status == "completed" 
+            and check.conclusion not in ("success", "skipped", "neutral")
+        ]
 
     def list_pr_comments(self, pr_number: int) -> list[IssueCommentData]:
         """List comments on a pull request (issue comments, not review comments)."""

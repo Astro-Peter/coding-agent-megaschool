@@ -34,6 +34,9 @@ MAX_DEV_ITERATIONS = 5
 # Label prefix for tracking iterations
 ITERATION_LABEL_PREFIX = "iteration-"
 
+# CI Fixer agent marker for extracting CI feedback
+CI_FIXER_MARKER = "<!-- ci-fixer-agent-report -->"
+
 
 # --- Plan Extraction ---
 
@@ -57,6 +60,63 @@ def _load_latest_plan(comments: list[IssueCommentData]) -> dict | None:
         if parsed:
             return parsed
     return None
+
+
+# --- CI Feedback Extraction ---
+
+def _extract_ci_feedback(comment: IssueCommentData) -> dict | None:
+    """Extract CI feedback from a CI fixer agent comment."""
+    if CI_FIXER_MARKER not in comment.body:
+        return None
+    # Extract the machine-readable JSON block
+    match = re.search(r"```json\s*(\{.*?\})\s*```", comment.body, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def _extract_ci_suggestions(comment_body: str) -> list[str]:
+    """Extract suggested fixes from CI fixer comment body."""
+    suggestions = []
+    
+    # Look for the "Suggested Fixes" section
+    if "### Suggested Fixes" in comment_body:
+        fixes_section = comment_body.split("### Suggested Fixes")[1]
+        # Stop at the next section
+        if "###" in fixes_section:
+            fixes_section = fixes_section.split("###")[0]
+        
+        # Extract each fix (lines starting with **)
+        for line in fixes_section.split("\n"):
+            line = line.strip()
+            if line.startswith("**") or line.startswith("- "):
+                suggestions.append(line.lstrip("*- ").strip())
+    
+    # Also look for root causes
+    if "### Root Causes" in comment_body:
+        causes_section = comment_body.split("### Root Causes")[1]
+        if "###" in causes_section:
+            causes_section = causes_section.split("###")[0]
+        
+        for line in causes_section.split("\n"):
+            line = line.strip()
+            if line.startswith("- "):
+                suggestions.append(f"Root cause: {line[2:]}")
+    
+    return suggestions
+
+
+def _load_latest_ci_feedback(comments: list[IssueCommentData]) -> list[str]:
+    """Find the most recent CI fixer feedback from PR comments."""
+    for comment in sorted(comments, key=lambda c: c.created_at, reverse=True):
+        if CI_FIXER_MARKER in comment.body:
+            suggestions = _extract_ci_suggestions(comment.body)
+            if suggestions:
+                return suggestions
+    return []
 
 
 # --- Iteration Tracking ---
@@ -220,16 +280,37 @@ def _build_coder_instructions(
     iteration: int,
     max_iterations: int,
     reviewer_feedback: list[str] | None = None,
+    ci_feedback: list[str] | None = None,
+    is_ci_fix_mode: bool = False,
 ) -> str:
     """Build the instructions for the coder agent."""
     steps = plan.get("steps", [])
     steps_text = "\n".join(f"  {i+1}. {step}" for i, step in enumerate(steps))
 
     feedback_section = ""
+    
+    # CI feedback takes priority when in CI fix mode
+    if ci_feedback and is_ci_fix_mode:
+        ci_items = "\n".join(f"  - {item}" for item in ci_feedback)
+        feedback_section = f"""
+## CI Failure Analysis (CRITICAL - Fix these first!)
+The CI checks have failed. The CI Fixer agent identified the following issues:
+{ci_items}
+
+You MUST fix these CI issues before the code can be merged.
+Focus on:
+- Syntax errors and typos
+- Import/dependency issues
+- Type errors
+- Linting violations
+- Test failures
+
+"""
+    
     if reviewer_feedback:
         feedback_items = "\n".join(f"  - {item}" for item in reviewer_feedback)
-        feedback_section = f"""
-## Reviewer Feedback (PRIORITY - Address these issues first!)
+        feedback_section += f"""
+## Reviewer Feedback (PRIORITY - Address these issues!)
 This is iteration {iteration}/{max_iterations}. The reviewer found the following issues:
 {feedback_items}
 
@@ -241,7 +322,15 @@ You MUST address these issues before proceeding with any other changes.
         iteration_note = f"""
 ## Iteration Note
 This is iteration {iteration}/{max_iterations} of the development cycle.
-Previous attempts had issues that need to be fixed. Focus on the reviewer feedback.
+Previous attempts had issues that need to be fixed.
+"""
+
+    mode_context = ""
+    if is_ci_fix_mode:
+        mode_context = """
+## Mode: CI Fix
+You are running in CI fix mode. Your primary goal is to fix CI failures.
+After fixing, the CI will run again automatically.
 """
 
     return f"""You are an expert coding agent. Your task is to implement code changes based on a plan.
@@ -249,7 +338,7 @@ Previous attempts had issues that need to be fixed. Focus on the reviewer feedba
 ## Issue
 Title: {issue.title}
 Body: {issue.body}
-
+{mode_context}
 ## Plan
 Summary: {plan.get('summary', 'No summary')}
 Steps:
@@ -267,7 +356,7 @@ Steps:
 - Follow existing code style and conventions.
 - Do not create unnecessary files.
 - If you cannot complete a step, explain why in your mark_complete summary.
-- If there is reviewer feedback, address it FIRST before other changes.
+- If there is CI or reviewer feedback, address it FIRST before other changes.
 """
 
 
@@ -283,6 +372,8 @@ def _build_coder_agent(
         iteration=context.iteration,
         max_iterations=context.max_iterations,
         reviewer_feedback=context.reviewer_feedback,
+        ci_feedback=context.ci_feedback,
+        is_ci_fix_mode=context.is_ci_fix_mode,
     )
     
     return Agent[AgentContext](
@@ -330,6 +421,18 @@ async def run_coder_async(*, context: AgentContext) -> None:
     
     client = context.gh_client
     issue_number = context.issue_number
+    
+    # Check if we're in CI fix mode
+    is_ci_fix_mode = os.getenv("CI_FIX_MODE", "").lower() == "true"
+    context.is_ci_fix_mode = is_ci_fix_mode
+    
+    # If in CI fix mode, load CI feedback from PR comments
+    if is_ci_fix_mode and context.pr_number:
+        pr_comments = client.list_pr_comments(context.pr_number)
+        ci_feedback = _load_latest_ci_feedback(pr_comments)
+        context.ci_feedback = ci_feedback
+        if ci_feedback:
+            logger.info("Loaded %d CI feedback items from PR #%d", len(ci_feedback), context.pr_number)
     
     issue = client.get_issue(issue_number)
     comments = client.list_issue_comments(issue_number)
@@ -540,11 +643,21 @@ def main() -> int:
     # Configure the SDK for OpenRouter
     configure_sdk()
     
+    # Get PR number if available (used in CI fix mode)
+    pr_number = None
+    pr_number_str = os.getenv("PR_NUMBER", "")
+    if pr_number_str:
+        try:
+            pr_number = int(pr_number_str)
+        except ValueError:
+            pass
+    
     # Create context
     context = AgentContext(
         gh_client=cfg.gh_client,
         model=cfg.model,
         issue_number=issue_number,
+        pr_number=pr_number,
     )
     
     run_coder(context=context)
