@@ -317,32 +317,28 @@ and provide actionable suggestions for how to fix them.
 ## CI Check Failures (Summary)
 {failed_checks_info}
 
-## Your Task
+## Your Workflow
 
-1. First, use the CI tools to get detailed error information:
-   - `get_check_annotations`: Get structured error messages (file paths, line numbers)
-   - `list_failed_workflows`: List all failed workflow runs
-   - `get_workflow_jobs`: Get jobs for a specific workflow run
-   - `get_workflow_logs`: Get the actual log output with error messages
+Use the CI tools to gather error information, then analyze and provide suggestions.
 
-2. Analyze the errors to identify root causes
+### Available Tools
 
-3. Use code exploration tools to understand context:
-   - `read_file`: Read source files mentioned in errors
-   - `search_codebase`: Search for related code, imports, or patterns
-   - `list_dir`: Explore the project structure
+1. **`get_check_annotations`** - Get structured error messages with file paths and line numbers 
+   from linters and test frameworks. Start here.
 
-4. Provide specific, actionable suggestions for fixing each issue
+2. **`list_failed_workflows`** - Get the list of failed workflow runs and their IDs.
 
-5. Include code examples where helpful
+3. **`get_workflow_logs`** - Use the workflow ID to get the actual log output with detailed error messages.
+   Essential for understanding test failures and build errors.
 
-## Recommended Workflow
+4. **`get_workflow_jobs`** - See which specific jobs/steps failed within a workflow.
 
-1. Start with `get_check_annotations` - this often has structured error info
-2. If you need more details, use `list_failed_workflows` to find workflow IDs
-3. Use `get_workflow_logs` with the workflow ID to get full log output
-4. Read the relevant source files to understand the context
-5. Provide your analysis and suggestions
+### Recommended Approach
+
+1. Call `get_check_annotations` first - this often has structured error info with file paths and line numbers
+2. Call `list_failed_workflows` to get workflow IDs
+3. Call `get_workflow_logs` with the workflow ID to get full log output
+4. Analyze the errors and provide your suggestions
 
 ## Focus Areas
 

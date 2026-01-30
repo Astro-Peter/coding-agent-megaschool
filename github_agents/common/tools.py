@@ -484,14 +484,15 @@ def get_reviewer_tools() -> list:
 
 
 def get_ci_fixer_tools() -> list:
-    """Get tools for the CI fixer agent (read-only analysis + CI log access)."""
+    """Get tools for the CI fixer agent (CI log access only).
+    
+    The CI fixer agent only needs CI tools to analyze failures.
+    File exploration is not needed - the CI tools provide file paths
+    and line numbers in error messages.
+    """
     return [
-        get_workdir,
-        list_dir,
-        read_file,
-        search_codebase,
+        get_check_annotations,
         list_failed_workflows,
         get_workflow_jobs,
         get_workflow_logs,
-        get_check_annotations,
     ]
