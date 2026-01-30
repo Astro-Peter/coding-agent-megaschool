@@ -25,11 +25,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from agents.common.config import load_config
-from agents.common.github_client import GitHubClient
-from agents.orchestrator import Orchestrator
-from agents.planner_agent.cli import PLAN_MARKER
-from agents.reviewer_agent.runner import REVIEWER_FEEDBACK_MARKER
+from github_agents.common.config import load_config
+from github_agents.common.github_client import GitHubClient
+from github_agents.orchestrator import Orchestrator
+from github_agents.planner_agent.agent import PLAN_MARKER
+from github_agents.reviewer_agent.agent import REVIEWER_FEEDBACK_MARKER
 
 
 STATE_PATH = Path(".watcher_state.json")

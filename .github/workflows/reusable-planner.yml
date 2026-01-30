@@ -55,4 +55,4 @@ jobs:
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
           PLAN_COMMAND: ${{ inputs.plan_command }}
-        run: python -m agents.planner_agent.cli
+        run: python -m github_agents.planner_agent.agent

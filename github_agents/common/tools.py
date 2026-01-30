@@ -6,7 +6,7 @@ from typing import Any
 
 from agents import RunContextWrapper, function_tool
 
-from agents.common.context import AgentContext
+from github_agents.common.context import AgentContext
 
 
 # --- File System Tools ---

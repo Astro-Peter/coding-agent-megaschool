@@ -10,9 +10,9 @@ from pydantic import BaseModel
 
 from agents import Agent, Runner
 
-from agents.common.config import get_issue_number, load_config
-from agents.common.context import AgentContext
-from agents.common.sdk_config import configure_sdk
+from github_agents.common.config import get_issue_number, load_config
+from github_agents.common.context import AgentContext
+from github_agents.common.sdk_config import configure_sdk
 
 logger = logging.getLogger(__name__)
 

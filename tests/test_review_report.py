@@ -1,35 +1,39 @@
-from agents.common.openai_client import create_text
+"""Tests for reviewer agent review decision output."""
+import pytest
+
+from github_agents.reviewer_agent.agent import ReviewDecision
 
 
-class _StubOpenAIClient:
-    def __init__(self, response_text: str) -> None:
-        self._response_text = response_text
-
-    class responses:
-        @staticmethod
-        def create(*, model, input):  # pragma: no cover - delegating stub
-            raise NotImplementedError
-
-
-def _make_client(response_text: str):
-    client = _StubOpenAIClient(response_text)
-
-    def _create(*, model, input):
-        class _Response:
-            output_text = response_text
-
-        return _Response()
-
-    client.responses.create = _create
-    return client
-
-
-def test_create_text_returns_output():
-    client = _make_client("Review summary")
-    output = create_text(
-        client=client,
-        model="gpt-4o-mini",
-        system_prompt="sys",
-        user_prompt="user",
+def test_review_decision_approved():
+    """Test ReviewDecision for approved PRs."""
+    decision = ReviewDecision(
+        status="APPROVED",
+        summary="Looks good!",
+        issues=[],
+        suggestions=["Consider adding tests"],
     )
-    assert output == "Review summary"
+    assert decision.status == "APPROVED"
+    assert decision.summary == "Looks good!"
+    assert decision.issues == []
+    assert decision.suggestions == ["Consider adding tests"]
+
+
+def test_review_decision_changes_requested():
+    """Test ReviewDecision for PRs needing changes."""
+    decision = ReviewDecision(
+        status="CHANGES_REQUESTED",
+        summary="Needs work",
+        issues=["Missing error handling", "No tests"],
+    )
+    assert decision.status == "CHANGES_REQUESTED"
+    assert len(decision.issues) == 2
+
+
+def test_review_decision_status_validation():
+    """Test ReviewDecision validates status values."""
+    with pytest.raises(Exception):
+        ReviewDecision(
+            status="INVALID",
+            summary="Test",
+            issues=[],
+        )

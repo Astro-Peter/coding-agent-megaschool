@@ -15,13 +15,13 @@ from pathlib import Path
 from agents import Agent, Runner
 from agents.agent import StopAtTools
 
-from agents.common.code_index import CodeIndex
-from agents.common.config import get_issue_number, load_config
-from agents.common.context import AgentContext
-from agents.common.github_client import GitHubClient, IssueCommentData, IssueData
-from agents.common.sdk_config import configure_sdk
-from agents.common.tools import get_coder_tools
-from agents.planner_agent.agent import PLAN_MARKER
+from github_agents.common.code_index import CodeIndex
+from github_agents.common.config import get_issue_number, load_config
+from github_agents.common.context import AgentContext
+from github_agents.common.github_client import GitHubClient, IssueCommentData, IssueData
+from github_agents.common.sdk_config import configure_sdk
+from github_agents.common.tools import get_coder_tools
+from github_agents.planner_agent.agent import PLAN_MARKER
 
 logger = logging.getLogger(__name__)
 

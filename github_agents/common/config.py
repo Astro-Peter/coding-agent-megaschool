@@ -6,7 +6,7 @@ import os
 import sys
 from dataclasses import dataclass
 
-from agents.common.github_client import GitHubClient
+from github_agents.common.github_client import GitHubClient
 
 
 @dataclass

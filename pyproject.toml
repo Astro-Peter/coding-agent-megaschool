@@ -28,7 +28,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agents*"]
+include = ["github_agents*"]
 
 [tool.ruff]
 line-length = 100

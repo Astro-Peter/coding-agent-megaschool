@@ -4,12 +4,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from agents.common.context import AgentContext
-from agents.common.github_client import GitHubClient
-from agents.common.sdk_config import configure_sdk
-from agents.coder_agent.agent import run_coder, run_coder_async
-from agents.planner_agent.agent import Plan, run_planner, run_planner_async
-from agents.reviewer_agent.agent import (
+from github_agents.common.context import AgentContext
+from github_agents.common.github_client import GitHubClient
+from github_agents.common.sdk_config import configure_sdk
+from github_agents.coder_agent.agent import run_coder, run_coder_async
+from github_agents.planner_agent.agent import Plan, run_planner, run_planner_async
+from github_agents.reviewer_agent.agent import (
     ReviewDecisionWithMeta,
     run_reviewer,
     run_reviewer_async,

@@ -13,12 +13,12 @@ from pydantic import BaseModel, Field
 
 from agents import Agent, Runner
 
-from agents.common.code_index import CodeIndex
-from agents.common.config import get_pr_number, load_config
-from agents.common.context import AgentContext
-from agents.common.github_client import CheckRunData, GitHubClient, IssueData
-from agents.common.sdk_config import configure_sdk
-from agents.common.tools import get_reviewer_tools
+from github_agents.common.code_index import CodeIndex
+from github_agents.common.config import get_pr_number, load_config
+from github_agents.common.context import AgentContext
+from github_agents.common.github_client import CheckRunData, GitHubClient, IssueData
+from github_agents.common.sdk_config import configure_sdk
+from github_agents.common.tools import get_reviewer_tools
 
 logger = logging.getLogger(__name__)
 

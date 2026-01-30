@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agents.common.code_index import CodeIndex
-    from agents.common.github_client import GitHubClient
+    from github_agents.common.code_index import CodeIndex
+    from github_agents.common.github_client import GitHubClient
 
 
 @dataclass

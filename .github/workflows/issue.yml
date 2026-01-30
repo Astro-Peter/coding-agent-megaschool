@@ -34,7 +34,7 @@ jobs:
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
           PLAN_COMMAND: ${{ github.event.comment.body || 'issue opened' }}
-        run: python -m agents.planner_agent.cli
+        run: python -m github_agents.planner_agent.agent
 
   code_after_plan:
     name: Run Coder Agent (auto after plan)
@@ -65,4 +65,4 @@ jobs:
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
-        run: python -m agents.coder_agent.runner
+        run: python -m github_agents.coder_agent.agent
