@@ -1,0 +1,67 @@
+# Copy this file to .github/workflows/sdlc-pr-fix.yml in your repository
+# This workflow fixes PR issues based on comment history when triggered.
+#
+# Triggers:
+#   - When the "fix-issues" label is added to a PR
+#   - Manually via workflow_dispatch
+#
+# The agent reads PR comments to understand what needs to be fixed,
+# then commits changes directly to the PR branch.
+#
+# Required secrets:
+#   - GH_TOKEN: GitHub Personal Access Token with repo scope
+#   - LLM_API_TOKEN: Your LLM API key
+
+name: SDLC PR Fix
+
+on:
+  # Trigger when fix-issues label is added to a PR
+  pull_request:
+    types: [labeled]
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to fix issues for'
+        required: true
+        type: number
+
+jobs:
+  # Get PR info and validate trigger
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    # Only run when fix-issues label is added, or on manual trigger
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.label.name == 'fix-issues' && github.event.pull_request.draft == false)
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+    steps:
+      - name: Get PR number
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Remove fix-issues label
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Remove the label so it can be re-added to trigger again
+          gh pr edit ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --remove-label "fix-issues" 2>/dev/null || true
+
+  # Call the reusable workflow
+  fix_pr:
+    name: Fix PR
+    needs: prepare
+    uses: Astro-Peter/coding-agent-megaschool/.github/workflows/reusable-pr-fix.yml@main
+    with:
+      pr_number: ${{ needs.prepare.outputs.pr_number }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}

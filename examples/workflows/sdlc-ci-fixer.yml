@@ -195,7 +195,7 @@ jobs:
           GITHUB_WORKSPACE: ${{ github.workspace }}/repo
           # Signal to coder that this is a CI fix context
           CI_FIX_MODE: "true"
-        run: python -m github_agents.coder_agent.agent
+        run: python -m github_agents.coder_agent.run_from_plan
 
   # When CI passes, add label to trigger reviewer
   trigger_review:

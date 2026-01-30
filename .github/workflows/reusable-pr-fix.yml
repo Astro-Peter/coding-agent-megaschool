@@ -1,10 +1,10 @@
-name: Reusable Coder Agent
+name: Reusable PR Fix Agent
 
 on:
   workflow_call:
     inputs:
-      issue_number:
-        description: 'Issue number to implement'
+      pr_number:
+        description: 'PR number to fix issues for'
         required: true
         type: number
       repository:
@@ -21,8 +21,8 @@ on:
         required: true
 
 jobs:
-  code:
-    name: Run Coder Agent
+  fix_pr:
+    name: Fix PR Issues
     runs-on: ubuntu-latest
     steps:
       - name: Checkout agent code
@@ -39,13 +39,13 @@ jobs:
       - name: Install dependencies
         run: pip install -e ./agent
 
-      - name: Run Coder Agent
+      - name: Run Coder Agent in PR Fix Mode
         working-directory: agent
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_REPOSITORY: ${{ inputs.repository }}
-          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          PR_NUMBER: ${{ inputs.pr_number }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
-        run: python -m github_agents.coder_agent.run_from_plan
+        run: python -m github_agents.coder_agent.run_from_pr_comments

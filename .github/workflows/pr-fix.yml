@@ -1,0 +1,73 @@
+name: PR Fix Issues Agent
+
+on:
+  # Trigger when fix-issues label is added to a PR
+  pull_request:
+    types: [labeled]
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to fix issues for'
+        required: true
+        type: number
+
+jobs:
+  fix_issues:
+    name: Fix PR Issues
+    runs-on: ubuntu-latest
+    # Only run when fix-issues label is added, or on manual trigger
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.label.name == 'fix-issues' && github.event.pull_request.draft == false)
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Get PR number
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Remove fix-issues label
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Remove the label so it can be re-added to trigger again
+          gh pr edit ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --remove-label "fix-issues" 2>/dev/null || true
+
+      - name: Get PR branch info
+        id: pr_info
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          PR_HEAD_SHA=$(gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --json headRefOid --jq '.headRefOid')
+          echo "head_sha=$PR_HEAD_SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr_info.outputs.head_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Run Coder Agent in PR Fix Mode
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+        run: python -m github_agents.coder_agent.run_from_pr_comments
