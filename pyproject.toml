@@ -22,8 +22,6 @@ dev = [
   "ruff>=0.4.0",
   "black>=24.0.0",
   "mypy>=1.10.0",
-  "pytest>=8.0.0",
-  "pytest-cov>=5.0.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -48,6 +46,3 @@ warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]

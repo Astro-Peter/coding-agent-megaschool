@@ -122,7 +122,7 @@ Issue + метка "agent"
 | **Issue Workflow** | `issue.yml` | Запускает Planner и Coder при создании issue |
 | **PR Workflow** | `pr.yml` | Запускает Reviewer Agent при создании/обновлении PR |
 | **PR Fix Workflow** | `pr-fix.yml` | Запускает Coder для исправления проблем по метке `fix-issues` |
-| **CI Workflow** | `ci.yml` | Проверки качества кода (ruff, black, mypy, pytest) |
+| **CI Workflow** | `ci.yml` | Проверки качества кода (ruff, black, mypy) |
 
 ### Reusable Workflows
 
@@ -134,17 +134,6 @@ Issue + метка "agent"
 | **Reusable Coder** | `reusable-coder.yml` | Реализация плана в коде |
 | **Reusable Reviewer** | `reusable-reviewer.yml` | Ревью PR и анализ CI |
 | **Reusable PR Fix** | `reusable-pr-fix.yml` | Исправление проблем в PR |
-
-### CI Workflow (`.github/workflows/ci.yml`)
-
-Запускает три параллельных job'а:
-- **lint**: Проверка ruff и black (форматирование)
-- **typecheck**: Проверка типов mypy
-- **test**: Запуск pytest
-
-Триггеры:
-- **Создание/обновление PR**: Запускает все проверки
-- **Push в main/master**: Запускает все проверки
 
 ## Конфигурация
 
@@ -191,16 +180,13 @@ pip install -e ".[dev]"
 
 ```bash
 # Линтинг
-ruff check github_agents/ tests/
+ruff check github_agents/
 
 # Форматирование
-black github_agents/ tests/
+black github_agents/
 
 # Проверка типов
 mypy github_agents/ --ignore-missing-imports
-
-# Тесты
-pytest tests/ -v --tb=short
 ```
 
 ## Структура проекта
@@ -240,7 +226,6 @@ megaschool/
 │   ├── ci_fixer_agent/          # Исправление CI ошибок
 │   │   ├── agent.py
 │   │   └── prompts.py
-│   └── orchestrator.py          # Координация агентов
 ├── configs/                     # Файлы конфигурации
 │   ├── logging.yaml             # Настройки логирования
 │   └── settings.yaml            # Общие настройки
@@ -250,9 +235,6 @@ megaschool/
 │       ├── sdlc-ci-fixer.yml    # CI fixer workflow
 │       ├── sdlc-pr-fix.yml      # PR fix workflow
 │       └── sdlc-reviewer.yml    # Reviewer workflow
-├── tests/                       # Тесты
-│   ├── test_issue_parsing.py
-│   └── test_review_report.py
 ├── .env.example                 # Пример переменных окружения
 ├── Dockerfile
 ├── docker-compose.yml
