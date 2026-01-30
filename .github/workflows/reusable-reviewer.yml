@@ -1,0 +1,52 @@
+name: Reusable Reviewer Agent
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'Pull request number to review'
+        required: true
+        type: number
+      repository:
+        description: 'Target repository (owner/repo)'
+        required: false
+        type: string
+        default: ${{ github.repository }}
+    secrets:
+      GH_TOKEN:
+        description: 'GitHub token with PR write access'
+        required: true
+      LLM_API_TOKEN:
+        description: 'LLM API token'
+        required: true
+
+jobs:
+  review:
+    name: Run Reviewer Agent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+        with:
+          repository: Astro-Peter/megaschool
+          path: agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ./agent
+
+      - name: Run Reviewer Agent
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPOSITORY: ${{ inputs.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
+          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://api.openai.com/v1' }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+        run: python -m agents.reviewer_agent.runner

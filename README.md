@@ -90,6 +90,31 @@ All agents run in GitHub Actions:
 
 No local setup needed - just configure secrets and create issues.
 
+### Use on Other Repos (Reusable Workflows)
+
+You can use the SDLC agents on any repository without copying the agent code:
+
+1. **Copy the example workflow** to your target repo:
+   ```bash
+   # In your target repo
+   mkdir -p .github/workflows
+   curl -o .github/workflows/sdlc-agent.yml \
+     https://raw.githubusercontent.com/Astro-Peter/megaschool/main/examples/workflows/sdlc-agent.yml
+   ```
+
+2. **Add secrets** to your target repo (`Settings > Secrets > Actions`):
+   - `GH_TOKEN`: A GitHub Personal Access Token with `repo` scope
+   - `LLM_API_TOKEN`: Your LLM API key
+
+3. **Optional variables** (`Settings > Variables > Actions`):
+   - `LLM_PROVIDER`: `openai`, `openrouter`, or `yandex`
+   - `LLM_API_URL`: API endpoint URL
+   - `OPENAI_MODEL`: Model name
+
+4. **Create an issue** - the agents will run automatically!
+
+**Note:** You need a Personal Access Token (not the default `GITHUB_TOKEN`) because the reusable workflows run in the megaschool repo context and need to access your target repo.
+
 ## GitHub Actions Workflows
 
 ### Issue Workflow (`.github/workflows/issue.yml`)

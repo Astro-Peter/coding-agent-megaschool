@@ -1,0 +1,67 @@
+# Copy this file to .github/workflows/sdlc-agent.yml in your repository
+# 
+# Required secrets (add in Settings > Secrets > Actions):
+#   - GH_TOKEN: GitHub Personal Access Token with repo scope
+#   - LLM_API_TOKEN: Your LLM API key (OpenAI, OpenRouter, etc.)
+#
+# Optional variables (add in Settings > Variables > Actions):
+#   - LLM_PROVIDER: 'openai' (default) or 'openrouter' or 'yandex'
+#   - LLM_API_URL: API endpoint URL
+#   - OPENAI_MODEL: Model name (default: gpt-4o-mini)
+
+name: SDLC Agent
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # Plan on new issue or /plan command
+  plan:
+    name: Plan
+    if: github.event_name == 'issues' || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/plan'))
+    uses: Astro-Peter/megaschool/.github/workflows/reusable-planner.yml@main
+    with:
+      issue_number: ${{ github.event.issue.number }}
+      plan_command: ${{ github.event.comment.body || 'issue opened' }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+
+  # Code automatically after plan on new issues
+  code_after_plan:
+    name: Code (auto)
+    needs: plan
+    if: github.event_name == 'issues' && needs.plan.outputs.plan_created == 'true'
+    uses: Astro-Peter/megaschool/.github/workflows/reusable-coder.yml@main
+    with:
+      issue_number: ${{ github.event.issue.number }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+
+  # Code on /code command
+  code:
+    name: Code (manual)
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/code')
+    uses: Astro-Peter/megaschool/.github/workflows/reusable-coder.yml@main
+    with:
+      issue_number: ${{ github.event.issue.number }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
+
+  # Review on PR events
+  review:
+    name: Review
+    if: github.event_name == 'pull_request'
+    uses: Astro-Peter/megaschool/.github/workflows/reusable-reviewer.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
