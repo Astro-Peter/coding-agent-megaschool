@@ -44,6 +44,7 @@ Focus on:
 - Type errors
 - Linting violations
 - Test failures
+You must fix CI failures in code, and not by changing the CI configuration, but by actually looking at the code and fixing the issues.
 
 """
 
