@@ -161,11 +161,20 @@ def _format_review_body(decision: ReviewDecisionWithMeta) -> str:
     return "\n".join(lines)
 
 
-def _format_review_comment(decision: ReviewDecisionWithMeta, pr_url: str, branch: str) -> str:
+def _format_review_comment(
+    decision: ReviewDecisionWithMeta,
+    pr_url: str,
+    branch: str,
+    commit_sha: str | None = None,
+) -> str:
     """Format the review as a GitHub comment with machine-readable section."""
     status_emoji = "✅" if decision.status == "APPROVED" else "🔄"
     
+    # Add commit SHA marker for duplicate detection
+    commit_marker = f"<!-- reviewer-agent-{commit_sha} -->" if commit_sha else ""
+    
     lines = [
+        commit_marker,
         REVIEWER_FEEDBACK_MARKER,
         f"## {status_emoji} AI Reviewer Agent Report",
         "",
@@ -507,8 +516,8 @@ async def run_reviewer_async(*, context: AgentContext) -> ReviewDecisionWithMeta
         max_iterations=MAX_ITERATIONS,
     )
     
-    # Post the review comment
-    comment = _format_review_comment(decision_with_meta, pr.url, pr.head_ref)
+    # Post the review comment (include commit SHA for duplicate detection)
+    comment = _format_review_comment(decision_with_meta, pr.url, pr.head_ref, pr.head_sha)
     client.comment_pull_request(pr.number, comment)
     
     # Post a proper PR review

@@ -12,9 +12,6 @@ on:
   # Trigger when check suites complete (after CI finishes)
   check_suite:
     types: [completed]
-  # Also allow manual trigger via /review comment
-  issue_comment:
-    types: [created]
 
 jobs:
   review_after_checks:
@@ -28,41 +25,63 @@ jobs:
       status: ${{ steps.review.outputs.status }}
       issue_number: ${{ steps.issue.outputs.number }}
     steps:
-      - name: Get PR number
+      - name: Get PR number and commit SHA
         id: pr
         run: |
           echo "number=${{ github.event.check_suite.pull_requests[0].number }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ github.event.check_suite.head_sha }}" >> $GITHUB_OUTPUT
+
+      - name: Check if already reviewed this commit
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Check if there's already a review comment mentioning this commit SHA
+          REVIEWED=$(gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --json comments --jq ".comments[].body" | grep -c "<!-- reviewer-agent-${{ steps.pr.outputs.sha }} -->" || true)
+          if [ "$REVIEWED" -gt "0" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Already reviewed commit ${{ steps.pr.outputs.sha }}, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Wait for all checks to settle
+        if: steps.check.outputs.skip != 'true'
         run: sleep 10
 
       - name: Checkout agent code
+        if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           repository: Astro-Peter/coding-agent-megaschool
           path: agent
 
       - name: Set up Python
+        if: steps.check.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
         run: pip install -e ./agent
 
       - name: Run Reviewer Agent
+        if: steps.check.outputs.skip != 'true'
         id: review
         working-directory: agent
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_SHA: ${{ steps.pr.outputs.sha }}
           LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
         run: python -m github_agents.reviewer_agent.agent
 
       - name: Get linked issue number
+        if: steps.check.outputs.skip != 'true'
         id: issue
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -102,39 +121,3 @@ jobs:
           LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
         run: python -m github_agents.coder_agent.agent
-
-  review_manual:
-    name: Review (manual)
-    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Get PR number from issue
-        id: pr
-        run: |
-          # Issue comments on PRs have the PR number as issue number
-          echo "number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
-
-      - name: Checkout agent code
-        uses: actions/checkout@v4
-        with:
-          repository: Astro-Peter/coding-agent-megaschool
-          path: agent
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -e ./agent
-
-      - name: Run Reviewer Agent
-        working-directory: agent
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          LLM_API_TOKEN: ${{ secrets.LLM_API_TOKEN }}
-          LLM_API_URL: ${{ vars.LLM_API_URL || 'https://openrouter.ai/api/v1' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
-        run: python -m github_agents.reviewer_agent.agent
