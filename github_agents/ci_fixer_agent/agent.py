@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents import Agent, Runner, RunConfig, RunHooks, Tool
+from agents import Agent, Runner, RunHooks, Tool
 from agents.run_context import RunContextWrapper
 
 from github_agents.common.code_index import CodeIndex
@@ -398,13 +398,12 @@ async def run_ci_fixer_agent_async(
     )
     
     try:
-        run_config = RunConfig(hooks=ToolLoggingHooks())
         result = await Runner.run(
             agent,
             "Please analyze the CI failures and provide suggestions for fixing them.",
             context=context,
             max_turns=15,
-            run_config=run_config,
+            hooks=ToolLoggingHooks(),
         )
         return result.final_output_as(CIAnalysis)
     except Exception as exc:
